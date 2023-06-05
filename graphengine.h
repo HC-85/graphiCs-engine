@@ -507,7 +507,7 @@ phLightRay phongSphereTracing(phProtoSphere sphere, phMaterial material, phLight
     Vec3 surf2cam_direction = vecScalarMult(vecNormalize(cam2surf), -1);
     Vec3 illum = phongIllumination(white, material, scene, intersection, surf2cam_direction, surf_normal, reflected_direction);
 
-    phLightRay reflected_lightray = {.color = illum, .ray = {.direction = reflected_direction, .origin = intersection}};
+    phLightRay reflected_lightray = {.ray = {.origin = intersection, .direction = reflected_direction}, .color = illum};
     return reflected_lightray;
 };
 
@@ -612,7 +612,7 @@ phLightRay phongFloorTracing(phProtoPlane floorplane, phMaterial material, phLig
     Vec3 white = {255,255,255};
     Vec3 illum = phongIllumination(white, material, scene, intersection, vecNormalize(cam2surf), floorplane.direction, reflected_direction);
 
-    phLightRay reflected_lightray = {.color = illum, .ray = {.direction = reflected_direction, .origin = intersection}};
+    phLightRay reflected_lightray = {.ray = {.origin = intersection, .direction = reflected_direction, }, .color = illum};
     return reflected_lightray;
 };
 
