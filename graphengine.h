@@ -131,25 +131,10 @@ typedef struct
     Vec3 color;
     Geometry geometry;
 } LightSource;
+
 /////////////////////////////////////////////////////////////////////////////
 /* HIT FUNCTIONS */
-int sphereHitV1(LightRay camray, protoSphere sphere)
-{
-    Vec3 neg_camray_origin = vecScalarMult((camray.origin), -1);
-    Vec3 cam_to_sphere_center = vecAdd((sphere.center), neg_camray_origin);
-    float adjacent = vecDot(cam_to_sphere_center, (camray.direction));
-    int is_behind  = (adjacent < 0);
-    if (is_behind) return 0;
-
-    float hyp2 = vecDot(cam_to_sphere_center, cam_to_sphere_center);
-    float op2 = hyp2 - adjacent*adjacent;
-    int is_miss = (op2 > (sphere.radius * sphere.radius));
-    if (is_miss) return 0;
-    return 1;
-}
-
-
-float sphereHitV2(protoSphere sphere, LightRay lightray)
+float sphereHit(protoSphere sphere, LightRay lightray)
 {
     Vec3 neg_lightray_origin = vecScalarMult((lightray.origin), -1);
     Vec3 cam_to_sphere_center = vecAdd((sphere.center), neg_lightray_origin);
@@ -194,15 +179,7 @@ float phongSphereHit(phProtoSphere sphere, phLightRay lightray)
 }
 
 
-int floorHitV0(LightRay lightray)
-{
-    int is_miss = (lightray.direction.z>=0);
-    if (is_miss) return 0;
-    return 1;
-}
-
-
-float floorHitV1(protoPlane floorplane, LightRay lightray)
+float floorHit(protoPlane floorplane, LightRay lightray)
 {
     int is_miss = (lightray.direction.z>=0);
     if (is_miss) return INFINITY;
@@ -239,7 +216,7 @@ float phongFloorHit(phProtoPlane floorplane, phLightRay lightray)
 }
 
 
-float skyHitV1(protoPlane floorplane, LightRay lightray)
+float skyHit(protoPlane floorplane, LightRay lightray)
 {
     int is_miss = (lightray.direction.z<0);
     if (is_miss) return INFINITY;
@@ -295,165 +272,7 @@ Vec3 phongIllumination(Vec3 ambient_color, phMaterial material, Scene scene, Vec
 }
 
 
-int sphereTracingASCII_0(protoSphere* sphere, LightRay* camray, protoSphere* _sun)
-{
-    /*
-    A ray shoots from point C (camera) in a given direction. 
-    The direction vector must be unitary.
-    The vector from C to Sc (sphere's center) is projected into the ray, forming the adjacent side of a right triangle.
-    The vector C-Sc is the hypothenuse.
-    Therefore the minumum distance from the sphere's center to the ray is given by the opposite.
-    */
-    //////////////////////// ITER 1 ///////////////////////
-    Vec3 neg_camray_origin = vecScalarMult((camray->origin), -1);
-    Vec3 cam_to_sphere_center = vecAdd((sphere->center), neg_camray_origin);
-    float adjacent = vecDot(cam_to_sphere_center, (camray->direction));
-    int is_behind  = (adjacent < 0);
-    if (is_behind) return 0;
-
-    float hyp2 = vecDot(cam_to_sphere_center, cam_to_sphere_center);
-    float op2 = hyp2 - adjacent*adjacent;
-    int is_miss = (op2 > (sphere->radius * sphere->radius));
-    if (is_miss) return 0;
-
-    Vec3 projection = vecScalarMult(camray->direction, adjacent);
-    Vec3 neg_projection = vecScalarMult(projection, -1);
-    Vec3 perp_vec = vecAdd(cam_to_sphere_center, neg_projection);
-    
-    float dist_to_surf = sqrt(sphere->radius*sphere->radius - vecDot(perp_vec, perp_vec));
-    Vec3 surf = vecScalarMult(camray->direction, adjacent - dist_to_surf);
-    Vec3 neg_cam_to_sphere_center = vecScalarMult(cam_to_sphere_center, -1);
-    Vec3 surf_normal = vecAdd(surf, neg_cam_to_sphere_center);
-    surf_normal = vecNormalize(surf_normal);
-    Vec3 flip_vector = vecScalarMult(surf_normal, -2*vecDot(camray->direction, surf_normal));
-    Vec3 reflected_direction = vecAdd(camray->direction, flip_vector);
-
-    Vec3 reflectivity_unit = vecScalarMult(sphere->surface_color, 1/255);   
-    Vec3 new_color = {.x = reflectivity_unit.x * (camray->color).x * sphere->reflectivity,
-                      .y = reflectivity_unit.y * (camray->color).y * sphere->reflectivity, 
-                      .z = reflectivity_unit.z * (camray->color).z * sphere->reflectivity};
-
-    LightRay new_ray = {.origin = vecAdd(surf, camray->origin), .direction = reflected_direction, .color = new_color};
-
-    //////////////////////// ITER 2 ///////////////////////
-    Vec3 neg_new_ray_origin = vecScalarMult(new_ray.origin, -1);
-    Vec3 surf_to_sun_center = vecAdd((_sun->center), neg_new_ray_origin);
-    float sun_adjacent = vecDot(surf_to_sun_center, new_ray.direction);
-    int is_shadow  = (sun_adjacent < 0);
-    if (is_shadow) return 6;
-    float sun_hyp2 = vecDot(surf_to_sun_center, surf_to_sun_center);
-    float sun_op2 = sun_hyp2 - sun_adjacent*sun_adjacent;
-    int is_space = (sun_op2 > (_sun->radius * _sun->radius));
-    if (is_space) return 9;
-
-    return 12;
-};
-
-
-LightRay sphereTracingV0_5(protoSphere sphere, LightRay camray, protoSphere _sun, float* hit_distance)
-{
-    Vec3 neg_camray_origin = vecScalarMult((camray.origin), -1);
-    Vec3 cam_to_sphere_center = vecAdd((sphere.center), neg_camray_origin);
-    float adjacent = vecDot(cam_to_sphere_center, (camray.direction));
-
-    Vec3 projection = vecScalarMult(camray.direction, adjacent);
-    Vec3 neg_projection = vecScalarMult(projection, -1);
-    Vec3 perp_vec = vecAdd(cam_to_sphere_center, neg_projection);
-    
-    float dist_to_surf = sqrt(sphere.radius*sphere.radius - vecDot(perp_vec, perp_vec));
-    
-    if (dist_to_surf > *hit_distance)
-    {
-        return camray;
-    }
-    *hit_distance = dist_to_surf;
-
-    Vec3 surf = vecScalarMult(camray.direction, adjacent - dist_to_surf);
-    Vec3 neg_cam_to_sphere_center = vecScalarMult(cam_to_sphere_center, -1);
-    Vec3 surf_normal = vecAdd(surf, neg_cam_to_sphere_center);
-    surf_normal = vecNormalize(surf_normal);
-    Vec3 flip_vector = vecScalarMult(surf_normal, -2*vecDot(camray.direction, surf_normal));
-    Vec3 reflected_direction = vecAdd(camray.direction, flip_vector);
-
-    Vec3 reflectivity_unit = vecScalarMult(sphere.surface_color, sphere.reflectivity/255);
-    Vec3 reflected_color = vec3ComponentMult(reflectivity_unit, camray.color);
-
-    LightRay reflected_lightray = {.origin = vecAdd(surf, camray.origin), .direction = reflected_direction, .color = reflected_color};
-    return reflected_lightray;
-};
-
-
-LightRay sphereTracingV0_75(protoSphere sphere, LightRay camray, protoSphere _sun, float* hit_distance)
-{
-    Vec3 neg_camray_origin = vecScalarMult((camray.origin), -1);
-    Vec3 cam_to_sphere_center = vecAdd((sphere.center), neg_camray_origin);
-    float adjacent = vecDot(cam_to_sphere_center, (camray.direction));
-
-    Vec3 projection = vecScalarMult(camray.direction, adjacent);
-    Vec3 neg_projection = vecScalarMult(projection, -1);
-    Vec3 perp_vec = vecAdd(cam_to_sphere_center, neg_projection);
-    
-    float dist_to_surf = sqrt(sphere.radius*sphere.radius - vecDot(perp_vec, perp_vec));
-    
-    if (dist_to_surf > *hit_distance)
-    {
-        return camray;
-    }
-    *hit_distance = dist_to_surf;
-
-    Vec3 surf = vecScalarMult(camray.direction, adjacent - dist_to_surf);
-    Vec3 neg_cam_to_sphere_center = vecScalarMult(cam_to_sphere_center, -1);
-    Vec3 surf_normal = vecAdd(surf, neg_cam_to_sphere_center);
-    surf_normal = vecNormalize(surf_normal);
-    Vec3 flip_vector = vecScalarMult(surf_normal, -2*vecDot(camray.direction, surf_normal));
-    Vec3 reflected_direction = vecAdd(camray.direction, flip_vector);
-
-    Vec3 reflectivity_unit = vecScalarMult(sphere.surface_color, sphere.reflectivity/255);
-    Vec3 reflected_color = vec3ComponentMult(reflectivity_unit, camray.color);
-
-    LightRay reflected_lightray = {.origin = vecAdd(surf, camray.origin), .direction = reflected_direction, .color = reflected_color};
-    return reflected_lightray;
-};
-
-
-LightRay sphereTracingV1(protoSphere sphere, LightRay camray, float* hit_distance)
-{
-    Vec3 neg_camray_origin = vecScalarMult((camray.origin), -1);
-    Vec3 cam_to_sphere_center = vecAdd((sphere.center), neg_camray_origin);
-    float adjacent = vecDot(cam_to_sphere_center, (camray.direction));
-    int is_behind  = (adjacent < 0);
-    if (is_behind) return camray;
-
-    float hyp2 = vecDot(cam_to_sphere_center, cam_to_sphere_center);
-    float op2 = hyp2 - adjacent*adjacent;
-    int is_miss = (op2 > (sphere.radius * sphere.radius));
-    if (is_miss) return camray;
-
-    Vec3 projection = vecScalarMult(camray.direction, adjacent);
-    Vec3 neg_projection = vecScalarMult(projection, -1);
-    Vec3 perp_vec = vecAdd(cam_to_sphere_center, neg_projection);
-    
-    float dist_to_surf = sqrt(sphere.radius*sphere.radius - vecDot(perp_vec, perp_vec));
-    
-    if (dist_to_surf > *hit_distance) return camray;
-    *hit_distance = dist_to_surf;
-    
-    Vec3 surf = vecScalarMult(camray.direction, adjacent - dist_to_surf);
-    Vec3 neg_cam_to_sphere_center = vecScalarMult(cam_to_sphere_center, -1);
-    Vec3 surf_normal = vecAdd(surf, neg_cam_to_sphere_center);
-    surf_normal = vecNormalize(surf_normal);
-    Vec3 flip_vector = vecScalarMult(surf_normal, -2*vecDot(camray.direction, surf_normal));
-    Vec3 reflected_direction = vecAdd(camray.direction, flip_vector);
-
-    Vec3 reflectivity_unit = vecScalarMult(sphere.surface_color, sphere.reflectivity/255);
-    Vec3 reflected_color = vec3ComponentMult(reflectivity_unit, camray.color);
-
-    LightRay reflected_lightray = {.origin = vecAdd(surf, camray.origin), .direction = reflected_direction, .color = reflected_color};
-    return reflected_lightray;
-};
-
-
-LightRay sphereTracingV2(protoSphere sphere, LightRay lightray)
+LightRay sphereTracing(protoSphere sphere, LightRay lightray)
 {
     Vec3 neg_lightray_origin = vecScalarMult((lightray.origin), -1);
     Vec3 cam_to_sphere_center = vecAdd((sphere.center), neg_lightray_origin);
@@ -481,6 +300,7 @@ LightRay sphereTracingV2(protoSphere sphere, LightRay lightray)
     LightRay reflected_lightray = {.origin = vecAdd(surf, lightray.origin), .direction = reflected_direction, .color = reflected_color};
     return reflected_lightray;
 };
+
 
 phLightRay phongSphereTracing(phProtoSphere sphere, phMaterial material, phLightRay lightray, Scene scene){
     Vec3 cam_to_sphere_center = vecAdd(sphere.center, vecScalarMult((lightray.ray.origin), -1));
@@ -512,72 +332,7 @@ phLightRay phongSphereTracing(phProtoSphere sphere, phMaterial material, phLight
 };
 
 
-LightRay floorTracingV0(protoPlane floorplane, LightRay lightray, protoSphere sun, float* hit_distance)
-{
-    // Vec3 tmp = vecScalarMult(floorplane.origin, -1);
-    // Vec3 normal_to_origin = vecAdd(lightray.origin, tmp);
-    // Matrix3 trans_to_z = {{0,0,0},{0,0,0},{}} to tilt the floor later
-    // for this version we assume the floor is just a floor and is always at negative z and lives entirely in xy
-    // reflectivity of .5 and a green color is also assumed
-
-    float distance_to_floor = lightray.origin.z + abs(floorplane.origin.z);
-    float dist_over_zdir = distance_to_floor/abs(lightray.direction.z);
-    float x_intersect = lightray.origin.x + lightray.direction.x*dist_over_zdir;
-    float y_intersect = lightray.origin.y + lightray.direction.y*dist_over_zdir;
-    Vec3 intersect = {x_intersect, y_intersect, floorplane.origin.z};
-
-    Vec3 tmp = vecScalarMult(lightray.origin, -1);
-    Vec3 cam_to_intersect = vecAdd(intersect, tmp);
-    float intersect_distance = vecMagnitude(cam_to_intersect);
-    
-    if (intersect_distance > *hit_distance)
-    {
-        return lightray;
-    }
-    *hit_distance = intersect_distance;
-
-    Vec3 flip_vector = vecScalarMult(floorplane.direction, -2*vecDot(lightray.direction, floorplane.direction));
-    Vec3 reflected_direction = vecAdd(lightray.direction, flip_vector);
-
-    Vec3 reflectivity_unit = vecScalarMult(floorplane.surface_color, floorplane.reflectivity/255);
-    Vec3 reflected_color = vec3ComponentMult(reflectivity_unit, lightray.color);
-
-    LightRay reflected_lightray = {.origin = intersect, .direction = reflected_direction, .color = reflected_color};
-    return reflected_lightray;
-};
-
-
-LightRay floorTracingV1(protoPlane floorplane, LightRay lightray, float* hit_distance)
-{
-    int is_miss = (lightray.direction.z>=0);
-    if (is_miss) return lightray;
-
-    float distance_to_floor = lightray.origin.z + abs(floorplane.origin.z);
-    float dist_over_zdir = distance_to_floor/abs(lightray.direction.z);
-    float x_intersect = lightray.origin.x + lightray.direction.x*dist_over_zdir;
-    float y_intersect = lightray.origin.y + lightray.direction.y*dist_over_zdir;
-    Vec3 intersect = {x_intersect, y_intersect, floorplane.origin.z};
-
-    Vec3 tmp = vecScalarMult(lightray.origin, -1);
-    Vec3 cam_to_intersect = vecAdd(intersect, tmp);
-    float intersect_distance = vecMagnitude(cam_to_intersect);
-    
-    if (intersect_distance > *hit_distance) return lightray;
-    
-    *hit_distance = intersect_distance;
-
-    Vec3 flip_vector = vecScalarMult(floorplane.direction, -2*vecDot(lightray.direction, floorplane.direction));
-    Vec3 reflected_direction = vecAdd(lightray.direction, flip_vector);
-
-    Vec3 reflectivity_unit = vecScalarMult(floorplane.surface_color, floorplane.reflectivity/255);
-    Vec3 reflected_color = vec3ComponentMult(reflectivity_unit, lightray.color);
-
-    LightRay reflected_lightray = {.origin = intersect, .direction = reflected_direction, .color = reflected_color};
-    return reflected_lightray;
-};
-
-
-LightRay floorTracingV2(protoPlane floorplane, LightRay lightray)
+LightRay floorTracing(protoPlane floorplane, LightRay lightray)
 {
     float distance_to_floor = lightray.origin.z + ABS(floorplane.origin.z);
     float dist_over_zdir = distance_to_floor/ABS(lightray.direction.z);
@@ -619,7 +374,7 @@ phLightRay phongFloorTracing(phProtoPlane floorplane, phMaterial material, phLig
 /////////////////////////////////////////////////////////////////////////////
 /* LIGHT SOURCE COLORING FUNCTIONS */
 
-LightRay skyColoringV0(protoPlane sky, LightRay lightray)
+LightRay skyColoring(protoPlane sky, LightRay lightray)
 {
     Vec3 reflectivity_unit = vecScalarMult(sky.surface_color, sky.reflectivity/255);
     Vec3 reflected_color = vec3ComponentMult(reflectivity_unit, lightray.color);
@@ -628,25 +383,8 @@ LightRay skyColoringV0(protoPlane sky, LightRay lightray)
     return reflected_lightray;
 }
 
-LightRay coloringV0(Vec3 color, float reflectivity, LightRay lightray)
-{
-    Vec3 reflectivity_unit = vecScalarMult(color, reflectivity/255);
-    Vec3 reflected_color = vec3ComponentMult(reflectivity_unit, lightray.color);
 
-    LightRay reflected_lightray = {.origin = lightray.origin, .direction = lightray.direction, .color = reflected_color};
-    return reflected_lightray;
-}
-
-LightRay coloringV1(Vec3 color, LightRay lightray)
-{
-    Vec3 coloring_unit = vecScalarMult(color, 255);
-    Vec3 reflected_color = vec3ComponentMult(coloring_unit, lightray.color);
-
-    LightRay reflected_lightray = {.origin = lightray.origin, .direction = lightray.direction, .color = reflected_color};
-    return reflected_lightray;
-}
-
-LightRay coloringV2(Vec3 color, LightRay lightray, int curr_tracing_depth)
+LightRay coloring(Vec3 color, LightRay lightray, int curr_tracing_depth)
 {
     Vec3 coloring_unit = vecScalarMult(color, 255);
     Vec3 reflected_color = vec3ComponentMult(coloring_unit, lightray.color);
@@ -735,40 +473,7 @@ void tracingManagerV0(Camera camera, int pixel_height, int pixel_width, Scene sc
 
 /////////////////////////////////////////////////////////////////////////////
 /* OUTPUT FUNCTIONS */
-void array2ppmV0(FILE* fp, unsigned char* image_arr,  int pixel_width, int pixel_height, int max_val)
-{
-    fprintf(fp, "P6\n%d %d\n%d\n", pixel_width, pixel_height, max_val);
-    int i;
-
-    for (i = 0; i < pixel_width*pixel_height*3; i+=3)
-    {
-    static unsigned char color[3];
-    color[0] = image_arr[i];
-    color[1] = image_arr[i+1]; 
-    color[2] = image_arr[i+2]; 
-    fwrite(color, sizeof(unsigned char), 3, fp);
-    }
-};
-
-void array2ppmV1(unsigned char* image_arr, char filename[], int pixel_width, int pixel_height, int max_val)
-{
-    FILE *fp = fopen(filename, "wb");
-    fprintf(fp, "P6\n%d %d\n%d\n", pixel_width, pixel_height, max_val);
-    int i;
-
-    for (i = 0; i < pixel_width*pixel_height*3; i+=3)
-    {
-    static unsigned char color[3];
-    color[0] = image_arr[i];
-    color[1] = image_arr[i+1]; 
-    color[2] = image_arr[i+2]; 
-    fwrite(color, sizeof(unsigned char), 3, fp);
-    }
-    fclose(fp);
-};
-
-
-void array2ppmV2(unsigned char* image_arr, char filename[], int pixel_width, int pixel_height, int max_val)
+void array2ppm(unsigned char* image_arr, char filename[], int pixel_width, int pixel_height, int max_val)
 {
     FILE *fp = fopen(filename, "wb");
     fprintf(fp, "P6\n%d %d\n%d\n", pixel_width, pixel_height, max_val);

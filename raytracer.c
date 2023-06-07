@@ -286,6 +286,6 @@ int main(){
     };
 
     /////////////////////////// EXPORT IMAGE ////////////////////////////////
-    array2ppmV2(image, "sphere.ppm", pixel_width, pixel_height, 255);
+    array2ppm(image, "sphere.ppm", pixel_width, pixel_height, 255);
     return 0;
 }
