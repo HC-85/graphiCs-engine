@@ -24,19 +24,6 @@ int main(){
 
     //////////////////////////////////////////////////////////////////////////////////
     /* ILLUMINATION OBJECTS */
-    phSphere _sun = {
-        .proto = {
-            .center = {0, 0, 1e8},
-            .radius = 1e7},
-        .hit_function = &phongSphereHit,
-        .tracing_function = NULL
-    };
-
-    LightSource sun = {
-        .color = {255,255,255},
-        .geometry = _sun,
-    };
-
     phSphere _key_light = {
         .proto = {
             .center = {5, 10, 10},
@@ -74,18 +61,6 @@ int main(){
     LightSource back_light = {
         .color = {100,100,100},
         .geometry = _back_light,
-    };
-
-    /* IS SKY FULLY REPLACED BY AMBIENT?
-    phProtoPlane _sky = {
-        .origin = {0, 0, INFINITY},
-        .direction = {0, 0, -1},
-    };
-
-    Plane sky = {
-    .properties = _sky,
-    .hit_function = &skyHitV1,
-    .tracing_function = &floorTracingV2
     };
 
     //////////////////////////////////////////////////////////////////////////////////
@@ -175,15 +150,15 @@ int main(){
 
     phLightRay reflected_ray;
     float closest_dist;
-    int closest_ind;
     float intersect_dist;
+    int closest_ind;
     int curr_obj_type;
     int curr_light_type; 
     int max_tracing_depth = 1;
 
     for (int y_pixel = (int) -pixel_height/2; y_pixel< (int) pixel_height/2; y_pixel++)
     {
-            //if (y_pixel == 0)  continue;
+        //if (y_pixel == 0)  continue;
         if (y_pixel < 0)    y_scaled = vecScalarMult(y_norm, (y_pixel+.5)*virtual_pixel_height);
         else                y_scaled = vecScalarMult(y_norm, (y_pixel-.5)*virtual_pixel_height);
 
@@ -240,44 +215,6 @@ int main(){
                 {
                     reflected_ray.color = black;
                 }
-                /* else // CHECK IF IT HIT A LIGHT SOURCE
-                {
-                    for (int j = 0; j < scene.light_size; j++)
-                    {
-                        curr_light_type = scene.light_types[j];
-                        if (curr_light_type == 0)
-                        {
-                            LightSource curr_light = *((LightSource*)(((uint64_t*)scene.lighting)[j]));
-                            intersect_dist = curr_light.geometry.hit_function(curr_light.geometry.proto, reflected_ray);
-                        }
-                        else if (curr_light_type == 1)
-                        {
-                            LightSource curr_light = *((LightSource*)(((uint64_t*)scene.lighting)[j])); 
-                            intersect_dist = curr_light.geometry.hit_function(curr_light.geometry.proto, reflected_ray);
-                        }
-                        if (intersect_dist<closest_dist) 
-                        {
-                            closest_dist = intersect_dist;
-                            closest_ind = j;
-                        }
-                    }
-                    curr_tracing_depth = max_tracing_depth;
-                    if (closest_dist < INFINITY) // THE RAY HIT A LIGHTSOURCE 
-                    {
-                        if (scene.obj_types[closest_ind] == 0) 
-                        {
-                            Sphere curr_light = *((Sphere*)(((uint64_t*)scene.lighting)[closest_ind]));
-                            reflected_ray = coloringV0(curr_light.properties.emission_color, curr_light.properties.reflectivity, reflected_ray);
-                        }
-                        else if (scene.light_types[closest_ind] == 1) 
-                        {
-                            Plane curr_light = *((Plane*)(((uint64_t*)scene.lighting)[closest_ind]));
-                            reflected_ray = coloringV0(curr_light.properties.emission_color, curr_light.properties.reflectivity, reflected_ray);
-                        }
-                    }
-                    else 
-                }*/
-
             }
             *current_pixel_channel = reflected_ray.color.x; current_pixel_channel++;
             *current_pixel_channel = reflected_ray.color.y; current_pixel_channel++;
