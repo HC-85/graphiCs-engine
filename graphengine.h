@@ -70,9 +70,9 @@ typedef struct
 
 typedef struct
 {
-    float specular_ref;
-    float diffuse_ref;
     float ambient_ref;
+    float diffuse_ref;
+    float specular_ref;
     float shininess; 
     Vec3 color;
 } phMaterial;
