@@ -126,11 +126,22 @@ typedef union {
     phPlane plane;
 } Geometry;
 
+typedef union {
+    float (*hit_function_sphere)(phProtoSphere, phLightRay);
+    float (*hit_function_plane)(phProtoPlane, phLightRay);
+} HitFunction;
+
 typedef struct
 {
     Vec3 color;
     Geometry geometry;
 } LightSource;
+
+typedef struct
+{
+    Vec3 color;
+    Vec3 position;
+} PointLightSource;
 
 /////////////////////////////////////////////////////////////////////////////
 /* HIT FUNCTIONS */
@@ -238,12 +249,12 @@ Vec3 phongIllumination(Vec3 ambient_color, phMaterial material, Scene scene, Vec
 
     for (int j = 0; j < scene.light_size; j++)
     {
-        LightSource curr_light = *((LightSource*)(((uint64_t*)scene.lighting)[j]));
         
         int curr_light_type = scene.light_types[j];
-        if (curr_light_type == 0)
+        if (curr_light_type == 0) // Point Source
         {
-            Vec3 source_dir = vecAdd(curr_light.geometry.sphere.proto.center, vecScalarMult(intersection, -1));
+            PointLightSource curr_light = *((PointLightSource*)(((uint64_t*)scene.lighting)[j]));
+            Vec3 source_dir = vecAdd(curr_light.position, vecScalarMult(intersection, -1));
             source_dir = vecNormalize(source_dir);
             
             float proj_source_normal = vecDot(source_dir, surf_normal);

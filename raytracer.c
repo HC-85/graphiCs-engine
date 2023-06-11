@@ -6,7 +6,6 @@
 #include "linalg.h"
 #include "graphengine.h"
 
-#define INFINITE 1e8
 #define PI 3.1415926535
 
 int main(){
@@ -24,45 +23,20 @@ int main(){
 
     //////////////////////////////////////////////////////////////////////////////////
     /* ILLUMINATION OBJECTS */
-    phSphere _key_light = {
-        .proto = {
-            .center = {5, 10, 10},
-            .radius = 1},
-        .hit_function = &phongSphereHit,
-        .tracing_function = NULL
-    };
-
-    LightSource key_light = {
+    PointLightSource key_light = {
         .color = {255,255,255},
-        .geometry = _key_light,
+        .position =  {5, 10, 10},
     };
 
-    phSphere _fill_light = {
-        .proto = {
-            .center = {5, -5, -3},
-            .radius = 1},
-        .hit_function = &phongSphereHit,
-        .tracing_function = NULL
-    };
-
-    LightSource fill_light = {
+    PointLightSource fill_light = {
         .color = {150,150,150},
-        .geometry = _fill_light,
+        .position = {5, -5, -3},
     };
 
-    phSphere _back_light = {
-        .proto = {
-            .center = {0, -10 -2},
-            .radius = 1},
-        .hit_function = &phongSphereHit,
-        .tracing_function = NULL
-    };
-
-    LightSource back_light = {
+    PointLightSource back_light = {
         .color = {100,100,100},
-        .geometry = _back_light,
+        .position = {0, -10 -2},
     };
-
     //////////////////////////////////////////////////////////////////////////////////
     /* SCENE ARRANGEMENT */    
     phSphere sphere = {
