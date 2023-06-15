@@ -74,6 +74,7 @@ typedef struct
     float diffuse_ref;
     float specular_ref;
     float shininess; 
+    float reflectiveness;
     Vec3 color;
 } phMaterial;
 
@@ -108,7 +109,7 @@ typedef struct
     phProtoSphere proto;
     phMaterial material;
     float (*hit_function)(phProtoSphere, phLightRay);
-    phLightRay (*tracing_function)(phProtoSphere, phMaterial, phLightRay, Scene);
+    phLightRay (*tracing_function)(phProtoSphere, phMaterial, phLightRay, Scene, int);
 } phSphere;
 
 typedef struct
@@ -116,7 +117,7 @@ typedef struct
     phProtoPlane proto;
     phMaterial material;
     float (*hit_function)(phProtoPlane, phLightRay);
-    phLightRay (*tracing_function)(phProtoPlane, phMaterial, phLightRay, Scene);
+    phLightRay (*tracing_function)(phProtoPlane, phMaterial, phLightRay, Scene, int);
 } phPlane;
 
 /////////////////////////////////////////////////////////////////////////////
@@ -283,6 +284,52 @@ Vec3 phongIllumination(Vec3 ambient_color, phMaterial material, Scene scene, Vec
 }
 
 
+Vec3 phongIllumination2(Vec3 ambient_color, phMaterial material, Scene scene, Vec3 intersection, Vec3 surf2cam_direction, Vec3 surf_normal, Vec3 reflected_direction, int reflection_depth)
+{
+    assert(ABS(vecMagnitude(surf2cam_direction)-1)<1e-3);
+    assert(ABS(vecMagnitude(surf_normal)-1)<1e-3);
+    assert(ABS(vecMagnitude(reflected_direction)-1)<1e-3);
+
+    // Ambient light
+    Vec3 total_illum = vecScalarMult(ambient_color, material.ambient_ref);
+    // Should I declare it as static inside the loop? Use curly braces inside the loop to limit its scope but keep it through iterations?
+
+    for (int j = 0; j < scene.light_size; j++)
+    {
+        
+        int curr_light_type = scene.light_types[j];
+        if (curr_light_type == 0) // Point Source
+        {
+            PointLightSource curr_light = *((PointLightSource*)(((uint64_t*)scene.lighting)[j]));
+            Vec3 source_dir = vecAdd(curr_light.position, vecScalarMult(intersection, -1));
+            source_dir = vecNormalize(source_dir);
+            
+            float proj_source_normal = vecDot(source_dir, surf_normal);
+            if (proj_source_normal < 0) continue;
+
+            Vec3 diff_color = vecScalarMult(material.color, material.diffuse_ref/255);
+            Vec3 tmp = vec3ComponentMult(diff_color, curr_light.color); //WILL ASSUME SAME LIGHT INTENSITY FOR DIFF, SPEC AND AMB
+            Vec3 diff_illum = vecScalarMult(tmp, proj_source_normal);
+            total_illum = vecAdd(total_illum, diff_illum); //DIFFUSE TERM
+
+            float proj_cam_ref = vecDot(surf2cam_direction, reflected_direction);
+            if (proj_cam_ref < 0) continue;
+            Vec3 spec_color = vecScalarMult(material.color, material.specular_ref/255);
+            tmp = vec3ComponentMult(spec_color, curr_light.color);
+            Vec3 spec_illum = vecScalarMult(tmp, powf(proj_cam_ref, material.shininess));
+            total_illum = vecAdd(total_illum, spec_illum); //SPECULAR TERM
+
+        } else if (curr_light_type == 1)
+        {
+            assert(0);
+        }
+    };
+    // Vec3 scaled_total_illum = vecScalarMult(total_illum, 255); Intensities are already in [0,255]
+    Vec3 clamped_total_illum = vec3Clamp(total_illum, 0, 255);
+    return clamped_total_illum;
+}
+
+
 LightRay sphereTracing(protoSphere sphere, LightRay lightray)
 {
     Vec3 neg_lightray_origin = vecScalarMult((lightray.origin), -1);
@@ -343,6 +390,35 @@ phLightRay phongSphereTracing(phProtoSphere sphere, phMaterial material, phLight
 };
 
 
+phLightRay phongSphereTracing2(phProtoSphere sphere, phMaterial material, phLightRay lightray, Scene scene, int current_tracing_depth){
+    Vec3 cam_to_sphere_center = vecAdd(sphere.center, vecScalarMult((lightray.ray.origin), -1));
+    float adjacent = vecDot(cam_to_sphere_center, (lightray.ray.direction));
+
+    float hyp2 = vecDot(cam_to_sphere_center, cam_to_sphere_center);
+    float op2 = hyp2 - adjacent*adjacent;
+
+    Vec3 projection = vecScalarMult(lightray.ray.direction, adjacent);
+    Vec3 neg_projection = vecScalarMult(projection, -1);
+    Vec3 perp_vec = vecAdd(cam_to_sphere_center, neg_projection);
+    
+    float proj_surf_dist = sqrt(sphere.radius*sphere.radius - vecDot(perp_vec, perp_vec));    
+    Vec3 cam2surf = vecScalarMult(lightray.ray.direction, adjacent - proj_surf_dist);
+    Vec3 intersection = vecAdd(cam2surf, lightray.ray.origin);
+
+    Vec3 surf_normal = vecAdd(cam2surf,  vecScalarMult(cam_to_sphere_center, -1));
+    surf_normal = vecNormalize(surf_normal);
+    Vec3 flip_vector = vecScalarMult(surf_normal, -2*vecDot(lightray.ray.direction, surf_normal));
+    Vec3 reflected_direction = vecAdd(lightray.ray.direction, flip_vector);
+    reflected_direction = vecNormalize(reflected_direction);
+    Vec3 surf2cam_direction = vecScalarMult(vecNormalize(cam2surf), -1);
+
+    Vec3 illum = phongIllumination2((Vec3) {255,255,255}, material, scene, intersection, surf2cam_direction, surf_normal, reflected_direction, current_tracing_depth);
+    Vec3 newcolor = vec3Clamp(vecAdd(lightray.color, vecScalarMult(illum, pow(current_tracing_depth, -1/material.reflectiveness))), 0, 255);
+    phLightRay reflected_lightray = {.ray = {.origin = intersection, .direction = reflected_direction}, .color = newcolor};
+    return reflected_lightray;  
+};
+
+
 LightRay floorTracing(protoPlane floorplane, LightRay lightray)
 {
     float distance_to_floor = lightray.origin.z + ABS(floorplane.origin.z);
@@ -381,6 +457,29 @@ phLightRay phongFloorTracing(phProtoPlane floorplane, phMaterial material, phLig
     phLightRay reflected_lightray = {.ray = {.origin = intersection, .direction = reflected_direction, }, .color = illum};
     return reflected_lightray;
 };
+
+
+phLightRay phongFloorTracing2(phProtoPlane floorplane, phMaterial material, phLightRay lightray, Scene scene, int current_tracing_depth)
+{
+    float distance_to_floor = lightray.ray.origin.z + ABS(floorplane.origin.z);
+    float dist_over_zdir = distance_to_floor/ABS(lightray.ray.direction.z);
+    float x_intersect = lightray.ray.origin.x + lightray.ray.direction.x*dist_over_zdir;
+    float y_intersect = lightray.ray.origin.y + lightray.ray.direction.y*dist_over_zdir;
+    Vec3 intersection = {x_intersect, y_intersect, floorplane.origin.z};
+    
+    Vec3 flip_vector = vecScalarMult(floorplane.direction, -2*vecDot(lightray.ray.direction, floorplane.direction));
+    Vec3 reflected_direction = vecAdd(lightray.ray.direction, flip_vector);
+
+    Vec3 cam2surf = vecAdd(intersection, vecScalarMult(lightray.ray.origin, -1));
+
+    Vec3 white = {255,255,255};
+    Vec3 illum = phongIllumination2(white, material, scene, intersection, vecNormalize(cam2surf), floorplane.direction, reflected_direction, current_tracing_depth);
+    Vec3 newcolor = vec3Clamp(vecAdd(lightray.color, vecScalarMult(illum, pow(current_tracing_depth, -1/material.reflectiveness))), 0, 255);
+
+    phLightRay reflected_lightray = {.ray = {.origin = intersection, .direction = reflected_direction}, .color = newcolor};
+    return reflected_lightray;
+};
+
 
 /////////////////////////////////////////////////////////////////////////////
 /* LIGHT SOURCE COLORING FUNCTIONS */

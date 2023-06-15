@@ -20,13 +20,48 @@ int main(){
             .diffuse_ref = .7,
             .specular_ref = .2,
             .shininess = 2,
+            .reflectiveness = .4,
             .color = {100, 50, 150}
         },
         .proto = {
             .center = {0, 0, 0},
             .radius = .5},
         .hit_function = &phongSphereHit,
-        .tracing_function = &phongSphereTracing
+        .tracing_function = &phongSphereTracing2
+    };
+
+
+    phSphere sphere2 = {
+        .material = {
+            .ambient_ref = .6,
+            .diffuse_ref = .7,
+            .specular_ref = .2,
+            .shininess = 2,
+            .reflectiveness = .4,
+            .color = {150, 50, 100}
+        },
+        .proto = {
+            .center = {1.25, 1.25, 0},
+            .radius = .5},
+        .hit_function = &phongSphereHit,
+        .tracing_function = &phongSphereTracing2
+    };
+
+
+    phSphere sphere3 = {
+        .material = {
+            .ambient_ref = .6,
+            .diffuse_ref = .7,
+            .specular_ref = .2,
+            .shininess = 2,
+            .reflectiveness = .4,
+            .color = {50, 150, 100}
+        },
+        .proto = {
+            .center = {-1.25, -1.25, 0},
+            .radius = .5},
+        .hit_function = &phongSphereHit,
+        .tracing_function = &phongSphereTracing2
     };
 
     phPlane floorplane = {
@@ -35,23 +70,31 @@ int main(){
             .diffuse_ref = .4,
             .specular_ref = .3,
             .shininess = 2,
+            .reflectiveness = .4,
             .color = {100, 100, 150}
         },
         .proto = {
-            .origin = {0, 0, -2},
+            .origin = {0, 0, -.5},
             .direction = {0, 0, 1}},
         .hit_function = &phongFloorHit,
-        .tracing_function = &phongFloorTracing
+        .tracing_function = &phongFloorTracing2
     };
 
-    void* obj_arr[2];
-    obj_arr[0] = &sphere;
-    obj_arr[1] = &floorplane;
-
+    void* obj_arr[4];
+    int obj_types_arr[4];
     // sphere = 0, plane = 1
-    int obj_types_arr[2];
+
+    obj_arr[0] = &sphere;
     obj_types_arr[0] = 0;
-    obj_types_arr[1] = 1;
+
+    obj_arr[1] = &sphere2;
+    obj_types_arr[1] = 0;
+    
+    obj_arr[2] = &sphere3;
+    obj_types_arr[2] = 0;
+
+    obj_arr[3] = &floorplane;
+    obj_types_arr[3] = 1;
 
     //////////////////////////////////////////////////////////////////////////////////
     /* ILLUMINATION */
@@ -85,18 +128,18 @@ int main(){
     /* SCENE SETUP */
     Scene scene = { .objects = &obj_arr, .obj_types = obj_types_arr, 
                     .lighting = &lighting_arr, .light_types = light_types_arr, 
-                    .obj_size = 2, .light_size = 3};
+                    .obj_size = 4, .light_size = 3};
 
     Camera camera = {
-        .position = {.x = 0, .y = -3, .z = .6}, 
+        .position = {.x = -.5, .y = -4, .z = .6}, 
         .direction = {.x = 0, .y = 1, .z = -.2},
-        .fov = 30,
+        .fov = 50,
         .screen_distance = 1}; camera.direction = vecNormalize(camera.direction);
 
     //////////////////////////////////////////////////////////////////////////////////
     /* IMAGE SETUP */
-    int pixel_height = 640;
-    int pixel_width = 640;
+    int pixel_height = 1080;
+    int pixel_width = 1080;
     unsigned char* image = (unsigned char*) malloc(pixel_width * pixel_height * sizeof(unsigned char) * 3);
     unsigned char* current_pixel_channel = image;
 
@@ -121,7 +164,7 @@ int main(){
     /* RAY SETUP */
     phLightRay current_ray;
     phLightRay reflected_ray;
-    int max_tracing_depth = 1;
+    int max_tracing_depth = 100;
     for (int y_pixel = (int) -pixel_height/2; y_pixel< (int) pixel_height/2; y_pixel++)
     {
         //if (y_pixel == 0)  continue;
@@ -138,10 +181,10 @@ int main(){
 
             current_ray.ray.origin = camera.position;
             current_ray.ray.direction = vecNormalize(vecAdd(vecAdd(screen_center, x_scaled), y_scaled));
-            current_ray.color = (Vec3) {255, 255, 255};
+            current_ray.color = (Vec3) {0, 0, 0};
 
             reflected_ray = current_ray;
-            for (int curr_tracing_depth = 0; curr_tracing_depth < max_tracing_depth; curr_tracing_depth ++)
+            for (int curr_tracing_depth = 1; curr_tracing_depth <= max_tracing_depth; curr_tracing_depth ++)
             {
                 float closest_dist = INFINITY;
                 float intersect_dist;
@@ -172,18 +215,22 @@ int main(){
                 if (closest_dist < INFINITY) // IF THE RAY HIT AN OBJECT
                 {
                     if (scene.obj_types[closest_ind] == 0) // THE OBJECT WAS A SPHERE
-                    {
+                    {  
                         phSphere curr_obj = *((phSphere*)(((uint64_t*)scene.objects)[closest_ind]));
-                        reflected_ray = curr_obj.tracing_function(curr_obj.proto, curr_obj.material, reflected_ray, scene);
+                        reflected_ray = curr_obj.tracing_function(curr_obj.proto, curr_obj.material, reflected_ray, scene, curr_tracing_depth);
                     }
                     else if (scene.obj_types[closest_ind] == 1) // THE OBJECT WAS A PLANE
                     {
                         phPlane curr_obj = *((phPlane*)(((uint64_t*)scene.objects)[closest_ind]));
-                        reflected_ray = curr_obj.tracing_function(curr_obj.proto, curr_obj.material, reflected_ray, scene);
+                        reflected_ray = curr_obj.tracing_function(curr_obj.proto, curr_obj.material, reflected_ray, scene, curr_tracing_depth);
                     }
                 }
                 // THE RAY DID NOT HIT AN OBJECT
-                else reflected_ray.color = (Vec3) {0, 0, 0};
+                else 
+                {
+                    if (curr_tracing_depth == 1) reflected_ray.color = (Vec3) {0, 0, 0};
+                    else break;
+                }
             }
             // COLOR THE IMAGE ARRAY
             *current_pixel_channel = reflected_ray.color.x; current_pixel_channel++;
