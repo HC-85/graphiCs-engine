@@ -88,6 +88,20 @@ typedef struct
     int light_size; 
 } Scene;
 
+
+typedef struct
+{
+    RayTreeNode* parent;
+    RayTreeNode* reflected;
+    RayTreeNode* transmitted;
+    Vec3 position;
+    Vec3 color;
+    Vec3 normal;
+    int depth;
+    int scene_obj_ind;
+} RayTreeNode;
+
+
 /////////////////////////////////////////////////////////////////////////////
 /* SCENE OBJECTS */
 typedef struct
