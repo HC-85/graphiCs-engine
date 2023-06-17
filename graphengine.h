@@ -1,6 +1,11 @@
 #ifndef graphengine
 #define graphengine
 #define PI 3.1415926535
+#define MAX_QUEUE_SIZE 1000
+#define MAX_TREE_SIZE 10000
+#define RED_WAVELENGTH 0.685
+#define BLUE_WAVELENGTH 0.4725
+#define GREEN_WAVELENGTH 0.5145
 #include "linalg.h"
 #include <stdio.h>
 #include <stdint.h>
@@ -70,6 +75,12 @@ typedef struct
 
 typedef struct
 {
+    Ray ray;
+    float wavelength; // micrometers
+} frLightRay;
+
+typedef struct
+{
     float ambient_ref;
     float diffuse_ref;
     float specular_ref;
@@ -77,6 +88,26 @@ typedef struct
     float reflectiveness;
     Vec3 color;
 } phMaterial;
+
+typedef struct{
+    float B1;
+    float B2;
+    float B3;
+    float C1;
+    float C2;
+    float C3;
+} SellmeierCoeffs;
+
+typedef struct
+{
+    float ambient_ref;
+    float diffuse_ref;
+    float specular_ref;
+    float shininess; 
+    float reflectiveness;
+    Vec3 color;
+    SellmeierCoeffs sellmeier_coeffs;
+} frMaterial;
 
 typedef struct
 {
@@ -88,19 +119,25 @@ typedef struct
     int light_size; 
 } Scene;
 
-
-typedef struct
+typedef struct _RayTreeNode
 {
-    RayTreeNode* parent;
-    RayTreeNode* reflected;
-    RayTreeNode* transmitted;
+    struct _RayTreeNode* parent;
+    Vec3 reflected_shoot;
+    Vec3 transmitted_shoot;
     Vec3 position;
     Vec3 color;
     Vec3 normal;
     int depth;
     int scene_obj_ind;
+    float refraction_index;
 } RayTreeNode;
 
+typedef struct
+{
+    RayTreeNode* buds[MAX_QUEUE_SIZE];
+    int front;
+    int back;
+} RayQueue;
 
 /////////////////////////////////////////////////////////////////////////////
 /* SCENE OBJECTS */
@@ -128,11 +165,27 @@ typedef struct
 
 typedef struct
 {
+    phProtoSphere proto;
+    frMaterial material;
+    float (*hit_function)(phProtoSphere, Ray);
+    phLightRay (*tracing_function)(phProtoSphere, phMaterial, phLightRay, Scene, int);
+} frSphere;
+
+typedef struct
+{
     phProtoPlane proto;
     phMaterial material;
     float (*hit_function)(phProtoPlane, phLightRay);
     phLightRay (*tracing_function)(phProtoPlane, phMaterial, phLightRay, Scene, int);
 } phPlane;
+
+typedef struct
+{
+    phProtoPlane proto;
+    frMaterial material;
+    float (*hit_function)(phProtoPlane, Ray);
+    phLightRay (*tracing_function)(phProtoPlane, phMaterial, phLightRay, Scene, int);
+} frPlane;
 
 /////////////////////////////////////////////////////////////////////////////
 /* LIGHTING */
@@ -157,6 +210,25 @@ typedef struct
     Vec3 color;
     Vec3 position;
 } PointLightSource;
+
+/////////////////////////////////////////////////////////////////////////////
+/* QUEUE FUNCTIONS */
+int joinQueue(RayQueue* queue, RayTreeNode* new_bud)
+{
+    if (((queue->back)-(queue->front))%MAX_QUEUE_SIZE == 1) return -1; // QUEUE FULL
+    queue->buds[queue->back] = new_bud;
+    if (queue->back == (MAX_QUEUE_SIZE - 1)) queue->back = 0; //ROLLBACK
+    else queue->back ++;
+    return 0;
+}
+
+RayTreeNode* leaveQueue(RayQueue* queue){
+    if (queue->front == queue->back) return -1; // QUEUE EMPTY
+    RayTreeNode* front_ray = queue->buds[queue->front];
+    if (queue->front == (MAX_QUEUE_SIZE - 1)) queue->front = 0; //ROLLBACK
+    else queue->front ++;
+    return front_ray;
+}
 
 /////////////////////////////////////////////////////////////////////////////
 /* HIT FUNCTIONS */
@@ -494,6 +566,163 @@ phLightRay phongFloorTracing2(phProtoPlane floorplane, phMaterial material, phLi
     return reflected_lightray;
 };
 
+/////////////////////////////////////////////////////////////////////////////
+/* META FUNCTIONS */
+
+float findIntersect(Ray ray, Scene scene, int* obj_ind){
+    float closest_dist = INFINITY;
+    float intersect_dist;
+    int closest_ind;
+    for (int i = 0; i < scene.obj_size; i++)
+    {
+        int curr_obj_type = scene.obj_types[i];
+        if (curr_obj_type == 0) // Sphere
+        {
+            frSphere curr_obj = *((frSphere*)(((uint64_t*)scene.objects)[i]));
+            intersect_dist = curr_obj.hit_function(curr_obj.proto, ray);
+        }
+        else if (curr_obj_type == 1) // Plane
+        {
+            frPlane curr_obj = *((frPlane*)(((uint64_t*)scene.objects)[i])); 
+            intersect_dist = curr_obj.hit_function(curr_obj.proto, ray);
+        }
+
+        if (intersect_dist<closest_dist) // SAVE CLOSEST INTERSECTION
+        {
+            closest_dist = intersect_dist;
+            closest_ind = i;
+        }
+    };
+    *obj_ind = closest_ind;
+    return intersect_dist;
+};
+
+
+Vec3 findNormal(RayTreeNode previous_node, RayTreeNode current_node, Scene scene){
+    int obj_type = scene.obj_types[current_node.scene_obj_ind];
+    Vec3 surf_normal;
+    if (obj_type == 0)
+    {
+        frSphere sphere = *((frSphere*)(((uint64_t*)scene.objects)[current_node.scene_obj_ind]));
+        surf_normal = vecNormalize(vecAdd(current_node.position, vecScalarMult(sphere.proto.center, -1)));
+    }
+    else if (obj_type == 1)
+    {
+        frPlane plane = *((frPlane*)(((uint64_t*)scene.objects)[current_node.scene_obj_ind]));
+        surf_normal = plane.proto.direction;
+    }
+    return surf_normal;
+};
+
+
+Vec3 findReflection(RayTreeNode previous_node, RayTreeNode current_node, Scene scene){
+    Vec3 incident_ray = vecNormalize(vecAdd(current_node.position, vecScalarMult(previous_node.position, -1)));
+    Vec3 flip_vector = vecScalarMult(current_node.normal, -2*vecDot(incident_ray, current_node.normal));
+    Vec3 surf_reflection = vecAdd(incident_ray, flip_vector);
+    surf_reflection = vecNormalize(surf_reflection);
+    return surf_reflection;
+};
+
+
+float sellmeierDispersion(float wavelength, SellmeierCoeffs sellmeier_coeffs){
+    // For glasses
+    // Wavelength in micrometers
+    float wl2 = wavelength*wavelength;
+    float n2 = 1 + (sellmeier_coeffs.B1*wl2)/(wl2-sellmeier_coeffs.C1) + (sellmeier_coeffs.B2*wl2)/(wl2-sellmeier_coeffs.C2) + (sellmeier_coeffs.B3*wl2)/(wl2-sellmeier_coeffs.C3);
+    return sqrt(n2);
+};
+
+
+Vec3 findTransmission(RayTreeNode previous_node, RayTreeNode current_node, Scene scene, float wavelength){
+    int inc_ref_ind = previous_node.refraction_index;
+    
+    int trans_obj_type = scene.obj_types[current_node.scene_obj_ind];
+    frMaterial material;
+    if (trans_obj_type == 0)
+    {
+        frSphere sphere = *((frSphere*)(((uint64_t*)scene.objects)[current_node.scene_obj_ind]));
+        material = sphere.material;
+    }
+    else if (trans_obj_type == 1)
+    {
+        frPlane plane = *((frPlane*)(((uint64_t*)scene.objects)[current_node.scene_obj_ind]));
+        material = plane.material;
+    }
+
+    float trans_ref_ind = sellmeierDispersion(wavelength, material.sellmeier_coeffs);
+
+    Vec3 incident = vecNormalize(vecAdd(current_node.position, vecScalarMult(previous_node.position,-1)));
+    float y_inc = vecDot(incident, current_node.normal);
+    Vec3 perp2normal = vecAdd(incident, vecScalarMult(current_node.normal, y_inc));
+    float x_inc = vecMagnitude(perp2normal);
+    perp2normal = vecNormalize(perp2normal);
+    float x_trans = x_inc*inc_ref_ind/trans_ref_ind;
+    float y_trans = sqrt(1 - x_trans*x_trans);
+    Vec3 transmitted = vecAdd(vecScalarMult(perp2normal, x_trans), vecScalarMult(current_node.normal, -y_trans));
+    assert((1 - ABS(vecMagnitude(transmitted))) < 1e-3);
+    return transmitted;
+}
+
+
+int fresnelForwardTracing(frLightRay rootray, Scene scene){
+    // BEWARE OF COPYING, MAY NEED TO CHANGE FUNCTIONS TO PASS BY REFERENCE
+    // create tree
+    RayTreeNode* raytree = (RayTreeNode *) malloc(MAX_TREE_SIZE * sizeof(RayTreeNode));
+    RayTreeNode* tree_ptr = raytree;
+
+    // create rootnode
+    RayTreeNode rootnode = {
+        .parent = NULL, 
+        .position = rootray.ray.origin,
+        .depth = 0,
+        .scene_obj_ind = NULL,
+        .refraction_index = 1};
+    
+    *tree_ptr = rootnode; tree_ptr++;
+    // find closest intersection
+    int closest_obj_ind;
+    float intersect_dist = findIntersect(rootray.ray, scene, &closest_obj_ind);
+    if (intersect_dist > 1e8) 
+    {
+        free(raytree);
+        return 1;
+    }
+    // create first child
+    Vec3 intersection = vecAdd(rootnode.position, vecScalarMult(rootray.ray.direction, -intersect_dist));
+    RayTreeNode trunk = {
+        .parent = &rootnode,
+        .position = intersection,
+        .scene_obj_ind = closest_obj_ind,
+        .depth = rootnode.depth + 1
+    };
+    *tree_ptr = trunk; tree_ptr++;
+    // find normal
+    trunk.normal = findNormal(rootnode, trunk, scene);
+    // initialize queue
+    RayQueue growthqueue = {.back = 0, .front = 0};
+    // add trunk to queue
+    if (joinQueue(&growthqueue, &trunk)<0) printf("FULL QUEUE");
+    // get reflection sprout direction
+    trunk.reflected_shoot = findReflection(rootnode, trunk, scene);
+    // get transmission sprout direction
+    trunk.transmitted_shoot = findTransmission(rootnode, trunk, scene, RED_WAVELENGTH);
+    // check queue for bud-growth
+    RayTreeNode* current_bud = leaveQueue(&growthqueue);
+    // shoot reflected current bud
+    assert((1-ABS(vecMagnitude(current_bud->reflected_shoot)))<1e-3);
+    Ray current_ray = {.origin = current_bud->position, .direction = current_bud->reflected_shoot};
+    intersect_dist = findIntersect(current_ray, scene, &closest_obj_ind);
+    intersection = vecAdd(rootnode.position, vecScalarMult(rootray.ray.direction, -intersect_dist));
+    printf("x: %f, y: %f, z: %f\n", intersection.x, intersection.y, intersection.z);
+    // shoot transmitted current bud
+    assert((1-ABS(vecMagnitude(current_bud->transmitted_shoot)))<1e-3);
+    current_ray.origin = current_bud->position;
+    current_ray.direction = current_bud->transmitted_shoot;
+    intersect_dist = findIntersect(current_ray, scene, &closest_obj_ind);
+    intersection = vecAdd(rootnode.position, vecScalarMult(rootray.ray.direction, -intersect_dist));
+    printf("x: %f, y: %f, z: %f\n", intersection.x, intersection.y, intersection.z);
+    return 42;
+};
 
 /////////////////////////////////////////////////////////////////////////////
 /* LIGHT SOURCE COLORING FUNCTIONS */
@@ -518,7 +747,7 @@ LightRay coloring(Vec3 color, LightRay lightray, int curr_tracing_depth)
 }
 
 /////////////////////////////////////////////////////////////////////////////
-/* TRACING MANAGER */
+/* TRACING MANAGERS */
 void tracingManagerV0(Camera camera, int pixel_height, int pixel_width, Scene scene, int max_recursion)
 {
     unsigned char* image = (unsigned char*) malloc(pixel_width * pixel_height * sizeof(unsigned char) * 3);
@@ -595,6 +824,11 @@ void tracingManagerV0(Camera camera, int pixel_height, int pixel_width, Scene sc
     };
 };
 
+
+void fresnelTracing(){
+    // Forward Tracing
+    // Backward Coloring
+};
 /////////////////////////////////////////////////////////////////////////////
 /* OUTPUT FUNCTIONS */
 void array2ppm(unsigned char* image_arr, char filename[], int pixel_width, int pixel_height, int max_val)

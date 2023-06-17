@@ -11,9 +11,10 @@
 int main(){
     //////////////////////////////////////////////////////////////////////////////////
     /* MATERIALS */
-
+    SellmeierCoeffs BK7 = {.B1 = 1.03961212, .B2 = 0.231792344, .B3 = 1.01046945,.C1 = 6.00069867e-3, .C2 = 2.00179144e-2, .C3 =103.560653};
     //////////////////////////////////////////////////////////////////////////////////
-    /* OBJECTS */    
+    /* OBJECTS */
+    /*    
     phSphere sphere = {
         .material = {
             .ambient_ref = .6,
@@ -79,7 +80,77 @@ int main(){
         .hit_function = &phongFloorHit,
         .tracing_function = &phongFloorTracing2
     };
+    */
+    frSphere sphere = {
+        .material = {
+            .ambient_ref = .6,
+            .diffuse_ref = .7,
+            .specular_ref = .2,
+            .shininess = 2,
+            .reflectiveness = .4,
+            .color = {100, 50, 150},
+            .sellmeier_coeffs = BK7
+        },
+        .proto = {
+            .center = {0, 0, 0},
+            .radius = .5},
+        .hit_function = &phongSphereHit,
+        .tracing_function = &phongSphereTracing2
+    };
 
+
+    frSphere sphere2 = {
+        .material = {
+            .ambient_ref = .6,
+            .diffuse_ref = .7,
+            .specular_ref = .2,
+            .shininess = 2,
+            .reflectiveness = .4,
+            .color = {150, 50, 100},
+            .sellmeier_coeffs = BK7
+
+        },
+        .proto = {
+            .center = {1.25, 1.25, 0},
+            .radius = .5},
+        .hit_function = &phongSphereHit,
+        .tracing_function = &phongSphereTracing2
+    };
+
+
+    frSphere sphere3 = {
+        .material = {
+            .ambient_ref = .6,
+            .diffuse_ref = .7,
+            .specular_ref = .2,
+            .shininess = 2,
+            .reflectiveness = .4,
+            .color = {50, 150, 100},
+            .sellmeier_coeffs = BK7
+        },
+        .proto = {
+            .center = {-1.25, -1.25, 0},
+            .radius = .5},
+        .hit_function = &phongSphereHit,
+        .tracing_function = &phongSphereTracing2
+    };
+
+    frPlane floorplane = {
+        .material = {
+            .ambient_ref = .35,
+            .diffuse_ref = .4,
+            .specular_ref = .3,
+            .shininess = 2,
+            .reflectiveness = .4,
+            .color = {100, 100, 150},
+            .sellmeier_coeffs = BK7
+        },
+        .proto = {
+            .origin = {0, 0, -.5},
+            .direction = {0, 0, 1}},
+        .hit_function = &phongFloorHit,
+        .tracing_function = &phongFloorTracing2
+    };
     void* obj_arr[4];
     int obj_types_arr[4];
     // sphere = 0, plane = 1
@@ -162,8 +233,8 @@ int main(){
 
     //////////////////////////////////////////////////////////////////////////////////
     /* RAY SETUP */
-    phLightRay current_ray;
-    phLightRay reflected_ray;
+    frLightRay current_ray;
+    // frLightRay reflected_ray;
     int max_tracing_depth = 100;
     for (int y_pixel = (int) -pixel_height/2; y_pixel< (int) pixel_height/2; y_pixel++)
     {
@@ -181,8 +252,12 @@ int main(){
 
             current_ray.ray.origin = camera.position;
             current_ray.ray.direction = vecNormalize(vecAdd(vecAdd(screen_center, x_scaled), y_scaled));
-            current_ray.color = (Vec3) {0, 0, 0};
-
+            //current_ray.color = (Vec3) {0, 0, 0};
+            current_ray.wavelength = RED_WAVELENGTH;
+            
+            int test = fresnelForwardTracing(current_ray, scene);
+            if (test == 42) return 0;
+            /*
             reflected_ray = current_ray;
             for (int curr_tracing_depth = 1; curr_tracing_depth <= max_tracing_depth; curr_tracing_depth ++)
             {
@@ -236,10 +311,12 @@ int main(){
             *current_pixel_channel = reflected_ray.color.x; current_pixel_channel++;
             *current_pixel_channel = reflected_ray.color.y; current_pixel_channel++;
             *current_pixel_channel = reflected_ray.color.z; current_pixel_channel++;
+            */
         };
     };
-
+    /*
     /////////////////////////// EXPORT IMAGE ////////////////////////////////
     array2ppm(image, "sphere.ppm", pixel_width, pixel_height, 255);
     return 0;
+    */
 }
