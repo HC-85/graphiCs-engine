@@ -569,21 +569,21 @@ phLightRay phongFloorTracing2(phProtoPlane floorplane, phMaterial material, phLi
 /////////////////////////////////////////////////////////////////////////////
 /* META FUNCTIONS */
 
-float findIntersect(Ray ray, Scene scene, int* obj_ind){
+float findIntersect(Ray ray, Scene* scene, int* obj_ind){
     float closest_dist = INFINITY;
     float intersect_dist;
     int closest_ind;
-    for (int i = 0; i < scene.obj_size; i++)
+    for (int i = 0; i < scene->obj_size; i++)
     {
-        int curr_obj_type = scene.obj_types[i];
+        int curr_obj_type = scene->obj_types[i];
         if (curr_obj_type == 0) // Sphere
         {
-            frSphere curr_obj = *((frSphere*)(((uint64_t*)scene.objects)[i]));
+            frSphere curr_obj = *((frSphere*)(((uint64_t*)scene->objects)[i]));
             intersect_dist = curr_obj.hit_function(curr_obj.proto, ray);
         }
         else if (curr_obj_type == 1) // Plane
         {
-            frPlane curr_obj = *((frPlane*)(((uint64_t*)scene.objects)[i])); 
+            frPlane curr_obj = *((frPlane*)(((uint64_t*)scene->objects)[i])); 
             intersect_dist = curr_obj.hit_function(curr_obj.proto, ray);
         }
 
@@ -628,6 +628,7 @@ float sellmeierDispersion(float wavelength, SellmeierCoeffs sellmeier_coeffs){
     // For glasses
     // Wavelength in micrometers
     float wl2 = wavelength*wavelength;
+    if ((sellmeier_coeffs.B1 + sellmeier_coeffs.B2 + sellmeier_coeffs.B3 + sellmeier_coeffs.C1 + sellmeier_coeffs.C2 + sellmeier_coeffs.C3) == 0) return 0;
     float n2 = 1 + (sellmeier_coeffs.B1*wl2)/(wl2-sellmeier_coeffs.C1) + (sellmeier_coeffs.B2*wl2)/(wl2-sellmeier_coeffs.C2) + (sellmeier_coeffs.B3*wl2)/(wl2-sellmeier_coeffs.C3);
     return sqrt(n2);
 };
@@ -648,9 +649,8 @@ Vec3 findTransmission(RayTreeNode* previous_node, RayTreeNode* current_node, Sce
         frPlane plane = *((frPlane*)(((uint64_t*)scene->objects)[current_node->scene_obj_ind]));
         material = plane.material;
     }
-
     float trans_ref_ind = sellmeierDispersion(wavelength, material.sellmeier_coeffs);
-
+    if (trans_ref_ind == 0) return (Vec3) {0,0,0};
     Vec3 incident = vecNormalize(vecAdd(current_node->position, vecScalarMult(previous_node->position,-1)));
     float y_inc = vecDot(incident, current_node->normal);
     Vec3 perp2normal = vecAdd(incident, vecScalarMult(current_node->normal, y_inc));
@@ -677,7 +677,7 @@ int fresnelForwardTracing(frLightRay rootray, Scene scene){
         .parent = NULL, 
         .position = rootray.ray.origin,
         .depth = 0,
-        .scene_obj_ind = NULL,
+        .scene_obj_ind = -1,
         .refraction_index = 1
     }; 
 
@@ -690,7 +690,7 @@ int fresnelForwardTracing(frLightRay rootray, Scene scene){
 
     // find closest intersection
     int closest_obj_ind;
-    float intersect_dist = findIntersect(rootray.ray, scene, &closest_obj_ind);
+    float intersect_dist = findIntersect(rootray.ray, &scene, &closest_obj_ind);
     if (intersect_dist > 1e8) // NO HIT
     {
         free(raytree);
@@ -698,35 +698,55 @@ int fresnelForwardTracing(frLightRay rootray, Scene scene){
     }
     tree_ptr->scene_obj_ind = closest_obj_ind;
     tree_ptr->position = vecAdd((tree_ptr-1)->position, vecScalarMult(rootray.ray.direction, -intersect_dist));
+
     // find normal
     tree_ptr->normal = findNormal(tree_ptr-1, tree_ptr, &scene);
 
+    // get reflection sprout direction
+    tree_ptr->reflected_shoot = findReflection(tree_ptr-1, tree_ptr);
+    
+    // get transmission sprout direction
+    tree_ptr->transmitted_shoot = findTransmission(tree_ptr-1, tree_ptr, &scene, rootray.wavelength);
+    
     // add trunk to queue
     if (joinQueue(&growthqueue, tree_ptr)<0) printf("FULL QUEUE");
 
-    // get reflection sprout direction
-    tree_ptr->reflected_shoot = findReflection(tree_ptr-1, tree_ptr);
-
-    // get transmission sprout direction
-    tree_ptr->transmitted_shoot = findTransmission(tree_ptr-1, tree_ptr, &scene, RED_WAVELENGTH);
-
-    // check queue for bud-growth
+    // check queue for bud growth
     RayTreeNode* current_bud = leaveQueue(&growthqueue);
 
     // shoot reflected current bud
-    assert((1-ABS(vecMagnitude(current_bud->reflected_shoot)))<1e-3);
-    Ray current_ray = {.origin = current_bud->position, .direction = current_bud->reflected_shoot};
-    intersect_dist = findIntersect(current_ray, scene, &closest_obj_ind);
-    Vec3 intersection = vecAdd((tree_ptr-1)->position, vecScalarMult(rootray.ray.direction, -intersect_dist));
-    printf("x: %f, y: %f, z: %f\n", intersection.x, intersection.y, intersection.z);
-    
+    if (!vecEqual(current_bud->reflected_shoot, (Vec3) {0,0,0}))
+    {
+        tree_ptr++;
+        *tree_ptr = (RayTreeNode) {
+            .parent = current_bud,
+            .depth = current_bud->depth + 1
+        };
+        RayTreeNode* reflected_ptr = tree_ptr;
+        assert((1-ABS(vecMagnitude(current_bud->reflected_shoot)))<1e-3);
+        Ray reflected_ray = {.origin = current_bud->position, .direction = current_bud->reflected_shoot};
+        float reflected_intersect_dist = findIntersect(reflected_ray, &scene, &closest_obj_ind);
+        if (reflected_intersect_dist > 1e8) tree_ptr--;
+        else reflected_ptr->position = vecAdd(current_bud->position, vecScalarMult(reflected_ray.direction, -reflected_intersect_dist));
+        printf("reflected - x: %f, y: %f, z: %f\n", reflected_ptr->position.x, reflected_ptr->position.y, reflected_ptr->position.z);
+    };
     // shoot transmitted current bud
-    assert((1-ABS(vecMagnitude(current_bud->transmitted_shoot)))<1e-3);
-    current_ray.origin = current_bud->position;
-    current_ray.direction = current_bud->transmitted_shoot;
-    intersect_dist = findIntersect(current_ray, scene, &closest_obj_ind);
-    intersection = vecAdd((tree_ptr-1)->position, vecScalarMult(rootray.ray.direction, -intersect_dist));
-    printf("x: %f, y: %f, z: %f\n", intersection.x, intersection.y, intersection.z);
+    if (!vecEqual(current_bud->transmitted_shoot, (Vec3) {0,0,0}))
+    {
+        tree_ptr++;
+        *tree_ptr = (RayTreeNode) {
+            .parent = current_bud,
+            .depth = current_bud->depth + 1
+        };
+        RayTreeNode* transmitted_ptr = tree_ptr;
+        assert((1-ABS(vecMagnitude(current_bud->transmitted_shoot)))<1e-3);
+        Ray transmitted_ray = {.origin = current_bud->position, .direction = current_bud->transmitted_shoot};
+        float transmitted_intersect_dist = findIntersect(transmitted_ray, &scene, &closest_obj_ind);
+        if (transmitted_intersect_dist > 1e8) tree_ptr--;
+        else transmitted_ptr->position = vecAdd(current_bud->position, vecScalarMult(transmitted_ray.direction, -transmitted_intersect_dist));
+        printf("transmitted - x: %f, y: %f, z: %f\n", transmitted_ptr->position.x, transmitted_ptr->position.y, transmitted_ptr->position.z);
+    };
+
     free(raytree);
     return 42;
 };
