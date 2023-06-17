@@ -665,61 +665,67 @@ Vec3 findTransmission(RayTreeNode* previous_node, RayTreeNode* current_node, Sce
 
 
 int fresnelForwardTracing(frLightRay rootray, Scene scene){
-    // BEWARE OF COPYING, MAY NEED TO CHANGE FUNCTIONS TO PASS BY REFERENCE
     // create tree
     RayTreeNode* raytree = (RayTreeNode *) malloc(MAX_TREE_SIZE * sizeof(RayTreeNode));
     RayTreeNode* tree_ptr = raytree;
 
+    // initialize queue
+    RayQueue growthqueue = {.back = 0, .front = 0};
+
     // create rootnode
-    RayTreeNode rootnode = {
+    *tree_ptr = (RayTreeNode){
         .parent = NULL, 
         .position = rootray.ray.origin,
         .depth = 0,
         .scene_obj_ind = NULL,
-        .refraction_index = 1};
-    
-    *tree_ptr = rootnode; tree_ptr++;
+        .refraction_index = 1
+    }; 
+
+    // create first child (trunk)
+    tree_ptr++;
+    *tree_ptr = (RayTreeNode) {
+        .parent = tree_ptr-1,
+        .depth = (tree_ptr-1)->depth + 1
+    };
+
     // find closest intersection
     int closest_obj_ind;
     float intersect_dist = findIntersect(rootray.ray, scene, &closest_obj_ind);
-    if (intersect_dist > 1e8) 
+    if (intersect_dist > 1e8) // NO HIT
     {
         free(raytree);
         return 1;
     }
-    // create first child
-    Vec3 intersection = vecAdd(rootnode.position, vecScalarMult(rootray.ray.direction, -intersect_dist));
-    RayTreeNode trunk = {
-        .parent = &rootnode,
-        .position = intersection,
-        .scene_obj_ind = closest_obj_ind,
-        .depth = rootnode.depth + 1
-    };
-    *tree_ptr = trunk; tree_ptr++;
+    tree_ptr->scene_obj_ind = closest_obj_ind;
+    tree_ptr->position = vecAdd((tree_ptr-1)->position, vecScalarMult(rootray.ray.direction, -intersect_dist));
     // find normal
-    trunk.normal = findNormal(&rootnode, &trunk, &scene);
-    // initialize queue
-    RayQueue growthqueue = {.back = 0, .front = 0};
+    tree_ptr->normal = findNormal(tree_ptr-1, tree_ptr, &scene);
+
     // add trunk to queue
-    if (joinQueue(&growthqueue, &trunk)<0) printf("FULL QUEUE");
+    if (joinQueue(&growthqueue, tree_ptr)<0) printf("FULL QUEUE");
+
     // get reflection sprout direction
-    trunk.reflected_shoot = findReflection(&rootnode, &trunk);
+    tree_ptr->reflected_shoot = findReflection(tree_ptr-1, tree_ptr);
+
     // get transmission sprout direction
-    trunk.transmitted_shoot = findTransmission(&rootnode, &trunk, &scene, RED_WAVELENGTH);
+    tree_ptr->transmitted_shoot = findTransmission(tree_ptr-1, tree_ptr, &scene, RED_WAVELENGTH);
+
     // check queue for bud-growth
     RayTreeNode* current_bud = leaveQueue(&growthqueue);
+
     // shoot reflected current bud
     assert((1-ABS(vecMagnitude(current_bud->reflected_shoot)))<1e-3);
     Ray current_ray = {.origin = current_bud->position, .direction = current_bud->reflected_shoot};
     intersect_dist = findIntersect(current_ray, scene, &closest_obj_ind);
-    intersection = vecAdd(rootnode.position, vecScalarMult(rootray.ray.direction, -intersect_dist));
+    Vec3 intersection = vecAdd((tree_ptr-1)->position, vecScalarMult(rootray.ray.direction, -intersect_dist));
     printf("x: %f, y: %f, z: %f\n", intersection.x, intersection.y, intersection.z);
+    
     // shoot transmitted current bud
     assert((1-ABS(vecMagnitude(current_bud->transmitted_shoot)))<1e-3);
     current_ray.origin = current_bud->position;
     current_ray.direction = current_bud->transmitted_shoot;
     intersect_dist = findIntersect(current_ray, scene, &closest_obj_ind);
-    intersection = vecAdd(rootnode.position, vecScalarMult(rootray.ray.direction, -intersect_dist));
+    intersection = vecAdd((tree_ptr-1)->position, vecScalarMult(rootray.ray.direction, -intersect_dist));
     printf("x: %f, y: %f, z: %f\n", intersection.x, intersection.y, intersection.z);
     free(raytree);
     return 42;
