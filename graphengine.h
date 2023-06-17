@@ -598,26 +598,26 @@ float findIntersect(Ray ray, Scene scene, int* obj_ind){
 };
 
 
-Vec3 findNormal(RayTreeNode previous_node, RayTreeNode current_node, Scene scene){
-    int obj_type = scene.obj_types[current_node.scene_obj_ind];
+Vec3 findNormal(RayTreeNode* previous_node, RayTreeNode* current_node, Scene* scene){
+    int obj_type = scene->obj_types[current_node->scene_obj_ind];
     Vec3 surf_normal;
     if (obj_type == 0)
     {
-        frSphere sphere = *((frSphere*)(((uint64_t*)scene.objects)[current_node.scene_obj_ind]));
-        surf_normal = vecNormalize(vecAdd(current_node.position, vecScalarMult(sphere.proto.center, -1)));
+        frSphere sphere = *((frSphere*)(((uint64_t*)scene->objects)[current_node->scene_obj_ind]));
+        surf_normal = vecNormalize(vecAdd(current_node->position, vecScalarMult(sphere.proto.center, -1)));
     }
     else if (obj_type == 1)
     {
-        frPlane plane = *((frPlane*)(((uint64_t*)scene.objects)[current_node.scene_obj_ind]));
+        frPlane plane = *((frPlane*)(((uint64_t*)scene->objects)[current_node->scene_obj_ind]));
         surf_normal = plane.proto.direction;
     }
     return surf_normal;
 };
 
 
-Vec3 findReflection(RayTreeNode previous_node, RayTreeNode current_node, Scene scene){
-    Vec3 incident_ray = vecNormalize(vecAdd(current_node.position, vecScalarMult(previous_node.position, -1)));
-    Vec3 flip_vector = vecScalarMult(current_node.normal, -2*vecDot(incident_ray, current_node.normal));
+Vec3 findReflection(RayTreeNode* previous_node, RayTreeNode* current_node){
+    Vec3 incident_ray = vecNormalize(vecAdd(current_node->position, vecScalarMult(previous_node->position, -1)));
+    Vec3 flip_vector = vecScalarMult(current_node->normal, -2*vecDot(incident_ray, current_node->normal));
     Vec3 surf_reflection = vecAdd(incident_ray, flip_vector);
     surf_reflection = vecNormalize(surf_reflection);
     return surf_reflection;
@@ -633,32 +633,32 @@ float sellmeierDispersion(float wavelength, SellmeierCoeffs sellmeier_coeffs){
 };
 
 
-Vec3 findTransmission(RayTreeNode previous_node, RayTreeNode current_node, Scene scene, float wavelength){
-    int inc_ref_ind = previous_node.refraction_index;
+Vec3 findTransmission(RayTreeNode* previous_node, RayTreeNode* current_node, Scene* scene, float wavelength){
+    int inc_ref_ind = previous_node->refraction_index;
     
-    int trans_obj_type = scene.obj_types[current_node.scene_obj_ind];
+    int trans_obj_type = scene->obj_types[current_node->scene_obj_ind];
     frMaterial material;
     if (trans_obj_type == 0)
     {
-        frSphere sphere = *((frSphere*)(((uint64_t*)scene.objects)[current_node.scene_obj_ind]));
+        frSphere sphere = *((frSphere*)(((uint64_t*)scene->objects)[current_node->scene_obj_ind]));
         material = sphere.material;
     }
     else if (trans_obj_type == 1)
     {
-        frPlane plane = *((frPlane*)(((uint64_t*)scene.objects)[current_node.scene_obj_ind]));
+        frPlane plane = *((frPlane*)(((uint64_t*)scene->objects)[current_node->scene_obj_ind]));
         material = plane.material;
     }
 
     float trans_ref_ind = sellmeierDispersion(wavelength, material.sellmeier_coeffs);
 
-    Vec3 incident = vecNormalize(vecAdd(current_node.position, vecScalarMult(previous_node.position,-1)));
-    float y_inc = vecDot(incident, current_node.normal);
-    Vec3 perp2normal = vecAdd(incident, vecScalarMult(current_node.normal, y_inc));
+    Vec3 incident = vecNormalize(vecAdd(current_node->position, vecScalarMult(previous_node->position,-1)));
+    float y_inc = vecDot(incident, current_node->normal);
+    Vec3 perp2normal = vecAdd(incident, vecScalarMult(current_node->normal, y_inc));
     float x_inc = vecMagnitude(perp2normal);
     perp2normal = vecNormalize(perp2normal);
     float x_trans = x_inc*inc_ref_ind/trans_ref_ind;
     float y_trans = sqrt(1 - x_trans*x_trans);
-    Vec3 transmitted = vecAdd(vecScalarMult(perp2normal, x_trans), vecScalarMult(current_node.normal, -y_trans));
+    Vec3 transmitted = vecAdd(vecScalarMult(perp2normal, x_trans), vecScalarMult(current_node->normal, -y_trans));
     assert((1 - ABS(vecMagnitude(transmitted))) < 1e-3);
     return transmitted;
 }
@@ -697,15 +697,15 @@ int fresnelForwardTracing(frLightRay rootray, Scene scene){
     };
     *tree_ptr = trunk; tree_ptr++;
     // find normal
-    trunk.normal = findNormal(rootnode, trunk, scene);
+    trunk.normal = findNormal(&rootnode, &trunk, &scene);
     // initialize queue
     RayQueue growthqueue = {.back = 0, .front = 0};
     // add trunk to queue
     if (joinQueue(&growthqueue, &trunk)<0) printf("FULL QUEUE");
     // get reflection sprout direction
-    trunk.reflected_shoot = findReflection(rootnode, trunk, scene);
+    trunk.reflected_shoot = findReflection(&rootnode, &trunk);
     // get transmission sprout direction
-    trunk.transmitted_shoot = findTransmission(rootnode, trunk, scene, RED_WAVELENGTH);
+    trunk.transmitted_shoot = findTransmission(&rootnode, &trunk, &scene, RED_WAVELENGTH);
     // check queue for bud-growth
     RayTreeNode* current_bud = leaveQueue(&growthqueue);
     // shoot reflected current bud
@@ -721,6 +721,7 @@ int fresnelForwardTracing(frLightRay rootray, Scene scene){
     intersect_dist = findIntersect(current_ray, scene, &closest_obj_ind);
     intersection = vecAdd(rootnode.position, vecScalarMult(rootray.ray.direction, -intersect_dist));
     printf("x: %f, y: %f, z: %f\n", intersection.x, intersection.y, intersection.z);
+    free(raytree);
     return 42;
 };
 
