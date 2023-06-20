@@ -257,18 +257,20 @@ float sphereHit(protoSphere sphere, LightRay lightray)
 float phongSphereHit(phProtoSphere sphere, phLightRay lightray)
 {
     Vec3 cam_to_sphere_center = vecAdd((sphere.center), vecScalarMult((lightray.ray.origin), -1));
+    int is_inside = ((vecMagnitude(cam_to_sphere_center) - sphere.radius) < 1e-3);
+    
     float adjacent = vecDot(cam_to_sphere_center, (lightray.ray.direction));
     int is_behind  = (adjacent < 0);
     if (is_behind) return INFINITY;
 
     float hyp2 = vecDot(cam_to_sphere_center, cam_to_sphere_center);
     float op2 = hyp2 - adjacent*adjacent;
+    if (is_inside) return 2*op2;
     int is_miss = (op2 > (sphere.radius * sphere.radius));
     if (is_miss) return INFINITY;
 
     Vec3 projection = vecScalarMult(lightray.ray.direction, adjacent);
-    Vec3 neg_projection = vecScalarMult(projection, -1);
-    Vec3 perp_vec = vecAdd(cam_to_sphere_center, neg_projection);
+    Vec3 perp_vec = vecAdd(cam_to_sphere_center, vecScalarMult(projection, -1));
     
     float proj_surf_dist = sqrt(sphere.radius*sphere.radius - vecDot(perp_vec, perp_vec));    
     float intersect_distance = adjacent - proj_surf_dist;
@@ -687,10 +689,6 @@ int fresnelForwardTracing(frLightRay rootray, Scene scene, int x_pixel, int y_pi
     };
     RayTreeNode* trunk = tree_ptr;
     // find closest intersection
-    if ((x_pixel == -155) & (y_pixel == -119))
-    {
-        printf("Oi its here");
-    }
     int closest_obj_ind;
     float intersect_dist = findIntersect(rootray.ray, &scene, &closest_obj_ind);
     if (intersect_dist > 1e8) // NO HIT
