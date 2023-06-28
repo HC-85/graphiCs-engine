@@ -210,8 +210,8 @@ int main(){
 
     //////////////////////////////////////////////////////////////////////////////////
     /* IMAGE SETUP */
-    int pixel_height = 512;
-    int pixel_width = 512;
+    int pixel_height = 256;
+    int pixel_width = 256;
     unsigned char* image = (unsigned char*) malloc(pixel_width * pixel_height * sizeof(unsigned char) * 3);
     unsigned char* current_pixel_channel = image;
 
@@ -256,7 +256,7 @@ int main(){
             //current_ray.color = (Vec3) {0, 0, 0};
             current_ray.wavelength = RED_WAVELENGTH;
             
-            int test = fresnelForwardTracing(current_ray, scene, x_pixel, y_pixel);
+            int test = fresnelTracing(current_ray, scene, x_pixel, y_pixel);
             if (test == 42) return 0;
             // fresnelBackwardColoring
             /*

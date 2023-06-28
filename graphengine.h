@@ -137,7 +137,16 @@ typedef struct
     RayTreeNode* buds[MAX_QUEUE_SIZE];
     int front;
     int back;
+    int is_full;
 } RayQueue;
+
+
+typedef struct
+{
+    RayTreeNode nodes[MAX_TREE_SIZE];
+    RayQueue growth_queue;
+    RayQueue stunt_queue;
+} RayTree;
 
 /////////////////////////////////////////////////////////////////////////////
 /* SCENE OBJECTS */
@@ -213,14 +222,21 @@ typedef struct
 
 /////////////////////////////////////////////////////////////////////////////
 /* QUEUE FUNCTIONS */
+int measureQueue(RayQueue* queue){
+    return (queue->back - queue->front)%MAX_QUEUE_SIZE;
+}
+
+
 int joinQueue(RayQueue* queue, RayTreeNode* new_bud)
 {
-    if ((queue->back + 1)%MAX_QUEUE_SIZE == (queue->front)) return -1; // QUEUE FULL
+    if (queue->is_full) return -1;
+    if (measureQueue(queue) == (MAX_QUEUE_SIZE - 1)) queue->is_full = 1;
     queue->buds[queue->back] = new_bud;
     if (queue->back == (MAX_QUEUE_SIZE - 1)) queue->back = 0; //ROLLBACK
     else queue->back ++;
     return 0;
 }
+
 
 RayTreeNode* leaveQueue(RayQueue* queue){
     if (queue->front == queue->back) return -1; // QUEUE EMPTY
@@ -229,6 +245,31 @@ RayTreeNode* leaveQueue(RayQueue* queue){
     else queue->front ++;
     return front_ray;
 }
+
+
+int mergeQueue(RayQueue* main_queue, RayQueue* merging_queue){
+    int merging_queue_size = measureQueue(merging_queue);
+    RayTreeNode* leaving_queue;
+    for(int i = 0; i < merging_queue_size; i++){
+        leaving_queue = leaveQueue(merging_queue);
+        if (joinQueue(main_queue, leaving_queue)<0) {
+            printf("FULL QUEUE\n");
+            return -1;
+        }
+    }
+    return 0;
+}   
+
+/////////////////////////////////////////////////////////////////////////////
+/* RAYTREE FUNCTIONS */
+RayTree* create_raytree(){
+    RayTree* raytree;
+    RayTreeNode* tree_ptr = raytree->nodes;
+    raytree->growth_queue =  (RayQueue){.back = 0, .front = 0};
+    raytree->stunt_queue =  (RayQueue){.back = 0, .front = 0};
+    return raytree;
+}
+
 
 /////////////////////////////////////////////////////////////////////////////
 /* HIT FUNCTIONS */
@@ -586,8 +627,8 @@ float findIntersect(Ray ray, Scene* scene, int* obj_ind){
             frPlane curr_obj = *((frPlane*)(((uint64_t*)scene->objects)[i])); 
             intersect_dist = curr_obj.hit_function(curr_obj.proto, ray);
         }
-
-        if (intersect_dist<closest_dist) // SAVE CLOSEST INTERSECTION
+        assert(!(intersect_dist<-1e-3));
+        if ((intersect_dist<closest_dist)&(ABS(intersect_dist)>1e-6)) // SAVE CLOSEST INTERSECTION
         {
             closest_dist = intersect_dist;
             closest_ind = i;
@@ -659,18 +700,41 @@ Vec3 findTransmission(RayTreeNode* previous_node, RayTreeNode* current_node, Sce
     float x_trans = x_inc*inc_ref_ind/trans_ref_ind;
     float y_trans = sqrt(1 - x_trans*x_trans);
     Vec3 transmitted = vecAdd(vecScalarMult(perp2normal, x_trans), vecScalarMult(current_node->normal, -y_trans));
-    assert((1 - ABS(vecMagnitude(transmitted))) < 1e-3);
+    if (!((1 - ABS(vecMagnitude(transmitted))) < 1e-3))
+        printf("oops");
+    //assert((1 - ABS(vecMagnitude(transmitted))) < 1e-3);
     return transmitted;
 }
 
 
-int fresnelForwardTracing(frLightRay rootray, Scene scene, int x_pixel, int y_pixel){
+float shadowTrace(Vec3 surface_position, Scene* scene, Vec3 normal){
+    // if the current surface is transparent, how does this affect the relation with the normal?
+    int closest_ind;
+    int lightlist[scene->light_size];
+    for (int i = 0; i < scene->light_size; i++)
+    {
+        PointLightSource light_source = *((PointLightSource*)(((uint64_t*)scene->objects)[i]));
+
+        Vec3 surf2source = vecAdd(light_source.position, vecScalarMult(surface_position, -1));
+        float light_distance = vecMagnitude(surf2source);
+        Ray shadowray = {.origin = light_source.position, .direction = vecNormalize(surf2source)};
+
+        float closest_intersect = findIntersect(shadowray, scene, &closest_ind);
+
+        //if (closest_intersect < light_distance) // shadow
+
+
+    };
+}  
+
+
+int fresnelForwardTracing(frLightRay rootray, RayTreeNode* raytree, RayQueue* growth_queue, RayQueue* stunt_queue, Scene scene, int x_pixel, int y_pixel){
     // create tree
     RayTreeNode* raytree = (RayTreeNode *) malloc(MAX_TREE_SIZE * sizeof(RayTreeNode));
     RayTreeNode* tree_ptr = raytree;
 
     // initialize queue
-    RayQueue growthqueue = {.back = 0, .front = 0};
+    RayQueue growth_queue = {.back = 0, .front = 0};
 
     // create rootnode
     *tree_ptr = (RayTreeNode){
@@ -708,12 +772,21 @@ int fresnelForwardTracing(frLightRay rootray, Scene scene, int x_pixel, int y_pi
     // get transmission sprout direction
     trunk->transmitted_shoot = findTransmission(trunk-1, trunk, &scene, rootray.wavelength);
     
+    if ((x_pixel == -85)&(y_pixel == -59)){
+        printf("!");
+    };
+
     // add trunk to queue
-    if (joinQueue(&growthqueue, tree_ptr)<0) printf("FULL QUEUE\n");
+    if (joinQueue(&growth_queue, tree_ptr)<0) printf("FULL QUEUE\n");
     int transmission_flag = 0;
-    for(int i = 0; i<5; i++){
+
+    // create stunted queue to not lose track of the tips of the tree that become stunted
+    RayQueue stunted_queue = {.back = 0, .front = 0};
+    for(int i = 0; i<10; i++){
+        int stunted_reflection = 0;
+        int stunted_transmission = 0;
         // check queue for bud growth
-        RayTreeNode* current_bud = leaveQueue(&growthqueue);
+        RayTreeNode* current_bud = leaveQueue(&growth_queue);
         if ((int) current_bud == -1) break;
         // shoot reflected current bud
         if (!vecEqual(current_bud->reflected_shoot, (Vec3) {0,0,0}))
@@ -729,6 +802,9 @@ int fresnelForwardTracing(frLightRay rootray, Scene scene, int x_pixel, int y_pi
             float reflected_intersect_dist = findIntersect(reflected_ray, &scene, &closest_obj_ind);
             if (reflected_intersect_dist > 1e8){
                 tree_ptr--;
+                // stunted growth
+                current_bud->reflected_shoot = (Vec3){0, 0, 0};
+                stunted_reflection = 1;
             }
             else{
                 reflected_ptr->scene_obj_ind = closest_obj_ind;
@@ -741,9 +817,9 @@ int fresnelForwardTracing(frLightRay rootray, Scene scene, int x_pixel, int y_pi
                 // get transmitted growth
                 reflected_ptr->transmitted_shoot = findTransmission(reflected_ptr->parent, reflected_ptr, &scene, rootray.wavelength);
                 // add to queue
-                if (joinQueue(&growthqueue, reflected_ptr)<0) printf("FULL QUEUE\n");
+                if (joinQueue(&growth_queue, reflected_ptr)<0) printf("FULL QUEUE\n");
             }
-        };
+        } else stunted_reflection = 1;
         // shoot transmitted current bud
         if (!vecEqual(current_bud->transmitted_shoot, (Vec3) {0,0,0}))
         {
@@ -759,6 +835,9 @@ int fresnelForwardTracing(frLightRay rootray, Scene scene, int x_pixel, int y_pi
             float transmitted_intersect_dist = findIntersect(transmitted_ray, &scene, &closest_obj_ind);
             if (transmitted_intersect_dist > 1e8){ 
                 tree_ptr--;
+                // stunted growth
+                current_bud->reflected_shoot = (Vec3){0, 0, 0};
+                stunted_transmission = 1;
             }
             else {
                 transmitted_ptr->scene_obj_ind = closest_obj_ind;
@@ -771,20 +850,49 @@ int fresnelForwardTracing(frLightRay rootray, Scene scene, int x_pixel, int y_pi
                 // get transmitted growth
                 transmitted_ptr->transmitted_shoot = findTransmission(transmitted_ptr->parent, transmitted_ptr, &scene, rootray.wavelength);
                 // add to queue
-                if (joinQueue(&growthqueue, transmitted_ptr)<0) printf("FULL QUEUE\n");
+                if (joinQueue(&growth_queue, transmitted_ptr)<0) printf("FULL QUEUE\n");
             }
+        } else stunted_transmission = 1;
+        if (stunted_reflection & stunted_transmission){
+            if (joinQueue(&stunted_queue, current_bud)<0) printf("FULL QUEUE\n");
+        };
+        if (current_bud->depth > 4){
+            printf("!");
         };
     };
     free(raytree);
-    if (transmission_flag) {
-        printf("%d", tree_ptr->depth);
-        return 42;
-    }
-    else return 1;
+    return 1;
 };
 
 /////////////////////////////////////////////////////////////////////////////
 /* LIGHT SOURCE COLORING FUNCTIONS */
+float fresnelColoring(RayTreeNode* tip){
+    // Check shadowing
+    return 0;
+}
+
+
+int fresnelBackwardColoring(frLightRay rootray, RayTreeNode* raytree, RayQueue* tips_queue, Scene scene, int x_pixel, int y_pixel){
+    // Independence of pixels is assumed, ie the calculations per tree are isolated
+    // Further into development may attempt to first create all trees and then prune, may need to optimize heavily for memory
+    
+    // Check tips for lightsource exposure
+    
+    // Prune tips that are not directly exposed to lightsources
+    // Repeat until root
+
+    // Starting from last, color
+    
+    // I can just do the coloring while checking the sources
+    while (measureQueue(tips_queue)>0){
+        RayTreeNode* current_tip = leaveQueue(tips_queue);
+        // coloring function
+    }
+
+    return 0;
+}
+
+
 
 LightRay skyColoring(protoPlane sky, LightRay lightray)
 {
@@ -884,9 +992,26 @@ void tracingManagerV0(Camera camera, int pixel_height, int pixel_width, Scene sc
 };
 
 
-void fresnelTracing(){
+int fresnelTracing(frLightRay rootray, Scene scene, int x_pixel, int y_pixel){
+    RayTreeNode* raytree = (RayTreeNode *) malloc(MAX_TREE_SIZE * sizeof(RayTreeNode));
+    // initialize queue
+    RayQueue growth_queue = {.back = 0, .front = 0};
+    RayQueue stunt_queue = {.back = 0, .front = 0};
+
     // Forward Tracing
+    int forwardtrace = fresnelForwardTracing(rootray, raytree, &growth_queue, &stunt_queue, scene, x_pixel, y_pixel);
+    // Merge growth and stunt queues to get the tips queue
+    RayQueue* tips_queue;
+    if (measureQueue(&growth_queue)>measureQueue(&stunt_queue)){
+        mergeQueue(&growth_queue, &stunt_queue);
+        tips_queue = &growth_queue;
+    } else{
+        mergeQueue(&stunt_queue, &growth_queue);
+        tips_queue = &stunt_queue;
+    }
     // Backward Coloring
+    int backwardcolor = fresnelBackwardColoring(rootray, raytree, tips_queue, scene, x_pixel, y_pixel);
+    return 0;
 };
 /////////////////////////////////////////////////////////////////////////////
 /* OUTPUT FUNCTIONS */
