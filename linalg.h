@@ -1,6 +1,6 @@
 #ifndef linalg
 #define linalg
-#define ABS(x) (x > 0 ? x : -x)
+#define ABS(x) ((x) > 0 ? (x) : -(x))
 
 #include <math.h>
 #include <assert.h>
@@ -27,7 +27,7 @@ typedef struct
 
 int vecEqual(Vec3 vec1, Vec3 vec2)
 {
-    return ((vec1.x == vec2.x) & (vec1.y == vec2.y) & (vec1.z == vec2.z));
+    return ((ABS(vec1.x - vec2.x)<1e-6) & (ABS(vec1.y - vec2.y)<1e-6) & (ABS(vec1.z - vec2.z)<1e-6));
 }
 
 

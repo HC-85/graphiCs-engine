@@ -253,72 +253,17 @@ int main(){
 
             current_ray.ray.origin = camera.position;
             current_ray.ray.direction = vecNormalize(vecAdd(vecAdd(screen_center, x_scaled), y_scaled));
-            //current_ray.color = (Vec3) {0, 0, 0};
-            current_ray.wavelength = RED_WAVELENGTH;
-            
-            int test = fresnelTracing(current_ray, scene, x_pixel, y_pixel);
-            if (test == 42) return 0;
-            // fresnelBackwardColoring
-            /*
-            reflected_ray = current_ray;
-            for (int curr_tracing_depth = 1; curr_tracing_depth <= max_tracing_depth; curr_tracing_depth ++)
-            {
-                float closest_dist = INFINITY;
-                float intersect_dist;
-                int closest_ind;
-
-                // FIND CLOSEST INTERSECTION
-                for (int i = 0; i < scene.obj_size; i++)
-                {
-                    int curr_obj_type = scene.obj_types[i];
-                    if (curr_obj_type == 0) // Sphere
-                    {
-                        phSphere curr_obj = *((phSphere*)(((uint64_t*)scene.objects)[i]));
-                        intersect_dist = curr_obj.hit_function(curr_obj.proto, reflected_ray);
-                    }
-                    else if (curr_obj_type == 1) // Plane
-                    {
-                        phPlane curr_obj = *((phPlane*)(((uint64_t*)scene.objects)[i])); 
-                        intersect_dist = curr_obj.hit_function(curr_obj.proto, reflected_ray);
-                    }
-
-                    if (intersect_dist<closest_dist) // SAVE CLOSEST INTERSECTION
-                    {
-                        closest_dist = intersect_dist;
-                        closest_ind = i;
-                    }
-                };
-                // COMPUTE TRACING FUNCTION ONLY FOR CLOSEST
-                if (closest_dist < INFINITY) // IF THE RAY HIT AN OBJECT
-                {
-                    if (scene.obj_types[closest_ind] == 0) // THE OBJECT WAS A SPHERE
-                    {  
-                        phSphere curr_obj = *((phSphere*)(((uint64_t*)scene.objects)[closest_ind]));
-                        reflected_ray = curr_obj.tracing_function(curr_obj.proto, curr_obj.material, reflected_ray, scene, curr_tracing_depth);
-                    }
-                    else if (scene.obj_types[closest_ind] == 1) // THE OBJECT WAS A PLANE
-                    {
-                        phPlane curr_obj = *((phPlane*)(((uint64_t*)scene.objects)[closest_ind]));
-                        reflected_ray = curr_obj.tracing_function(curr_obj.proto, curr_obj.material, reflected_ray, scene, curr_tracing_depth);
-                    }
-                }
-                // THE RAY DID NOT HIT AN OBJECT
-                else 
-                {
-                    if (curr_tracing_depth == 1) reflected_ray.color = (Vec3) {0, 0, 0};
-                    else break;
-                }
+            float wavelengths[3] = {RED_WAVELENGTH, GREEN_WAVELENGTH, BLUE_WAVELENGTH};
+            for (int i = 0; i<3; i++){
+                current_ray.wavelength = wavelengths[i];
+                *current_pixel_channel = fresnelTracing(current_ray, &scene, x_pixel, y_pixel);
+                current_pixel_channel++;
             }
-            // COLOR THE IMAGE ARRAY
-            *current_pixel_channel = reflected_ray.color.x; current_pixel_channel++;
-            *current_pixel_channel = reflected_ray.color.y; current_pixel_channel++;
-            *current_pixel_channel = reflected_ray.color.z; current_pixel_channel++;
-            */
         };
     };
-    /*
+    
     /////////////////////////// EXPORT IMAGE ////////////////////////////////
-    array2ppm(image, "sphere.ppm", pixel_width, pixel_height, 255);
+    array2ppm(image, "fresnel_sphere.ppm", pixel_width, pixel_height, 255);
     return 0;
-    */
+    
 }
