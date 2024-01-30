@@ -253,10 +253,15 @@ int main(){
 
             current_ray.ray.origin = camera.position;
             current_ray.ray.direction = vecNormalize(vecAdd(vecAdd(screen_center, x_scaled), y_scaled));
+            float colorsini;
             float wavelengths[3] = {RED_WAVELENGTH, GREEN_WAVELENGTH, BLUE_WAVELENGTH};
             for (int i = 0; i<3; i++){
                 current_ray.wavelength = wavelengths[i];
-                *current_pixel_channel = fresnelTracing(current_ray, &scene, x_pixel, y_pixel);
+                colorsini = fresnelTracing(current_ray, &scene, x_pixel, y_pixel);
+                if (colorsini!= 0){
+                    printf("!");
+                }
+                *current_pixel_channel = colorsini;
                 current_pixel_channel++;
             }
         };

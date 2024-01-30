@@ -242,7 +242,7 @@ int joinQueue(RayQueue* queue, RayTreeNode* new_bud)
 
 
 RayTreeNode* leaveQueue(RayQueue* queue){
-    if (queue->front == queue->back) return -1; // QUEUE EMPTY
+    if (queue->front == queue->back) return NULL; // QUEUE EMPTY
     RayTreeNode* front_ray = queue->buds[queue->front];
     if (queue->front == (MAX_QUEUE_SIZE - 1)) queue->front = 0; //ROLLBACK
     else queue->front ++;
@@ -298,12 +298,12 @@ float sphereHit(protoSphere sphere, LightRay lightray)
     return intersect_distance;
 }
 
-float phongSphereHit(phProtoSphere sphere, phLightRay lightray)
+float phongSphereHit(phProtoSphere sphere, Ray lightray)
 {
-    Vec3 cam_to_sphere_center = vecAdd((sphere.center), vecScalarMult((lightray.ray.origin), -1));
+    Vec3 cam_to_sphere_center = vecAdd((sphere.center), vecScalarMult((lightray.origin), -1));
     int is_inside = ((vecMagnitude(cam_to_sphere_center) - sphere.radius) < 1e-3);
     
-    float adjacent = vecDot(cam_to_sphere_center, (lightray.ray.direction));
+    float adjacent = vecDot(cam_to_sphere_center, (lightray.direction));
     int is_behind  = (adjacent < 0);
     if (is_behind) return INFINITY;
 
@@ -313,7 +313,7 @@ float phongSphereHit(phProtoSphere sphere, phLightRay lightray)
     int is_miss = (op2 > (sphere.radius * sphere.radius));
     if (is_miss) return INFINITY;
 
-    Vec3 projection = vecScalarMult(lightray.ray.direction, adjacent);
+    Vec3 projection = vecScalarMult(lightray.direction, adjacent);
     Vec3 perp_vec = vecAdd(cam_to_sphere_center, vecScalarMult(projection, -1));
     
     float proj_surf_dist = sqrt(sphere.radius*sphere.radius - vecDot(perp_vec, perp_vec));    
@@ -340,18 +340,18 @@ float floorHit(protoPlane floorplane, LightRay lightray)
     return intersect_distance; 
 }
 
-float phongFloorHit(phProtoPlane floorplane, phLightRay lightray)
+float phongFloorHit(phProtoPlane floorplane, Ray lightray)
 {
-    int is_miss = (lightray.ray.direction.z>=0);
+    int is_miss = (lightray.direction.z>=0);
     if (is_miss) return INFINITY;
 
-    float distance_to_floor = lightray.ray.origin.z + ABS(floorplane.origin.z);
-    float dist_over_zdir = distance_to_floor/ABS(lightray.ray.direction.z);
-    float x_intersect = lightray.ray.origin.x + lightray.ray.direction.x*dist_over_zdir;
-    float y_intersect = lightray.ray.origin.y + lightray.ray.direction.y*dist_over_zdir;
+    float distance_to_floor = lightray.origin.z + ABS(floorplane.origin.z);
+    float dist_over_zdir = distance_to_floor/ABS(lightray.direction.z);
+    float x_intersect = lightray.origin.x + lightray.direction.x*dist_over_zdir;
+    float y_intersect = lightray.origin.y + lightray.direction.y*dist_over_zdir;
     Vec3 intersect = {x_intersect, y_intersect, floorplane.origin.z};
 
-    Vec3 cam_to_intersect = vecAdd(intersect, vecScalarMult(lightray.ray.origin, -1));
+    Vec3 cam_to_intersect = vecAdd(intersect, vecScalarMult(lightray.origin, -1));
     float intersect_distance = vecMagnitude(cam_to_intersect);
     
     return intersect_distance; 
@@ -728,7 +728,7 @@ Vec3 findIncident(RayTreeNode* node){
 
 
 Vec3 color2absorbance(Vec3 color){
-    Vec3 uncalibrated_absorbance = ((Vec3) {255, 255, 255}, vecScalarMult(color ,-1));
+    Vec3 uncalibrated_absorbance = vecAdd((Vec3) {255, 255, 255}, vecScalarMult(color ,-1));
     return vecScalarMult(uncalibrated_absorbance, CALIBRATION_CONSTANT/255);
 }
 
@@ -757,7 +757,7 @@ float shadowTrace(RayTreeNode* intersection, Scene* scene, float color){
 
         Vec3 surf2source = vecAdd(light_source.position, vecScalarMult(intersection->position, -1));
         float light_distance = vecMagnitude(surf2source);
-        Ray shadowray = {.origin = light_source.position, .direction = vecNormalize(surf2source)};
+        Ray shadowray = {.origin = intersection->position, .direction = vecNormalize(surf2source)};
 
         float closest_intersect = findIntersect(shadowray, scene, &closest_ind);
 
@@ -786,19 +786,19 @@ float shadowTrace(RayTreeNode* intersection, Scene* scene, float color){
             // and the transmitted index of refraction is that of the previous node   
             transmitted_index = (intersection->parent)->refraction_index;  
             }
-            
-            assert((intersection->refraction_index >= 1)&(intersection->refraction_index < 2));
+
+            assert(((intersection->refraction_index >= 1)|(intersection->refraction_index == 0))&(intersection->refraction_index < 2));
             
             Vec3 light_direction = vecScalarMult(shadowray.direction, -1);
 
             // RGB
             Vec3 absorbance = color2absorbance(material.color);
             float intensity_contribution;
-            if (RED_WAVELENGTH == color){
+            if (isApprox(color, RED_WAVELENGTH, 1e-6)){
                 intensity_contribution = absorbance.x*coloring_function(light_source.color.x, incident, normal, light_direction, material.shininess);
-            } else if (GREEN_WAVELENGTH == color){
+            } else if (isApprox(color, GREEN_WAVELENGTH, 1e-6)){
                 intensity_contribution = absorbance.y*coloring_function(light_source.color.y, incident, normal, light_direction, material.shininess);
-            } else if (BLUE_WAVELENGTH == color){
+            } else if (isApprox(color, BLUE_WAVELENGTH, 1e-6)){
                 intensity_contribution = absorbance.z*coloring_function(light_source.color.z, incident, normal, light_direction, material.shininess);
             } else {
                 // unknown wavelength
@@ -818,7 +818,7 @@ float shadowTrace(RayTreeNode* intersection, Scene* scene, float color){
 }  
 
 
-int fresnelForwardTracing(frLightRay rootray, RayTreeNode* raytree, RayQueue* growth_queue, RayQueue* stunt_queue, Scene* scene, int x_pixel, int y_pixel){
+int fresnelForwardTracing(frLightRay rootray, RayTreeNode* raytree, RayQueue* growth_queue, RayQueue* stunted_queue, Scene* scene, int x_pixel, int y_pixel){
     // create tree
     RayTreeNode* tree_ptr = raytree;
     // create rootnode
@@ -842,8 +842,7 @@ int fresnelForwardTracing(frLightRay rootray, RayTreeNode* raytree, RayQueue* gr
     float intersect_dist = findIntersect(rootray.ray, scene, &closest_obj_ind);
     if (intersect_dist > 1e8) // NO HIT
     {
-        free(raytree);
-        return 1;
+        return 0;
     }
     trunk->scene_obj_ind = closest_obj_ind;
     trunk->position = vecAdd((trunk-1)->position, vecScalarMult(rootray.ray.direction, intersect_dist));
@@ -857,24 +856,17 @@ int fresnelForwardTracing(frLightRay rootray, RayTreeNode* raytree, RayQueue* gr
     
     // get transmission sprout direction
     trunk->transmitted_shoot = findTransmission(trunk-1, trunk, scene, rootray.wavelength);
-    trunk->stunted_transmission = 0;
-    
-    if ((x_pixel == -85)&(y_pixel == -59)){
-        printf("!");
-    };
+    if (vecEqual(trunk->transmitted_shoot, (Vec3) {0,0,0})) trunk->stunted_transmission = 1;
+    else trunk->stunted_transmission = 0;
 
     // add trunk to queue
-    if (joinQueue(&growth_queue, tree_ptr)<0) printf("FULL QUEUE\n");
-    int transmission_flag = 0;
+    if (joinQueue(growth_queue, tree_ptr)<0) printf("FULL QUEUE\n");
 
     // create stunted queue to not lose track of the tips of the tree that become stunted
-    RayQueue stunted_queue = {.front = 0, .back = 0};
-    for(int i = 0; i<10; i++){
-        int stunted_reflection = 0;
-        int stunted_transmission = 0;
+    for(int i = 0; (i<10)&(measureQueue(growth_queue)>0); i++){
         // check queue for bud growth
-        RayTreeNode* current_bud = leaveQueue(&growth_queue);
-        if ((int) current_bud == -1) break;
+        RayTreeNode* current_bud = leaveQueue(growth_queue);
+        assert(current_bud != NULL);
         // shoot reflected current bud
         if (!(current_bud->stunted_reflection))
         {
@@ -895,7 +887,7 @@ int fresnelForwardTracing(frLightRay rootray, RayTreeNode* raytree, RayQueue* gr
             else{
                 reflected_ptr->scene_obj_ind = closest_obj_ind;
                 reflected_ptr->position = vecAdd(current_bud->position, vecScalarMult(reflected_ray.direction, reflected_intersect_dist));
-                printf("reflected - x: %f, y: %f, z: %f\n", reflected_ptr->position.x, reflected_ptr->position.y, reflected_ptr->position.z);
+                // printf("reflected - x: %f, y: %f, z: %f\n", reflected_ptr->position.x, reflected_ptr->position.y, reflected_ptr->position.z);
 
                 reflected_ptr->normal = findNormal(reflected_ptr->parent, reflected_ptr, scene);
                 // get reflected growth
@@ -903,15 +895,15 @@ int fresnelForwardTracing(frLightRay rootray, RayTreeNode* raytree, RayQueue* gr
                 reflected_ptr->stunted_reflection = 0;
                 // get transmitted growth
                 reflected_ptr->transmitted_shoot = findTransmission(reflected_ptr->parent, reflected_ptr, scene, rootray.wavelength);
-                reflected_ptr->stunted_transmission = 0;
+                if (vecEqual(reflected_ptr->transmitted_shoot, (Vec3) {0,0,0})) reflected_ptr->stunted_transmission = 1;
+                else reflected_ptr->stunted_transmission = 0;
                 // add to queue
-                if (joinQueue(&growth_queue, reflected_ptr)<0) printf("FULL QUEUE\n");
+                if (joinQueue(growth_queue, reflected_ptr)<0) printf("FULL QUEUE\n");
             }
-        } else stunted_reflection = 1;
+        }
         // shoot transmitted current bud
         if (!(current_bud->stunted_transmission))
         {
-            transmission_flag = 1;
             tree_ptr++;
             *tree_ptr = (RayTreeNode) {
                 .parent = current_bud,
@@ -920,7 +912,7 @@ int fresnelForwardTracing(frLightRay rootray, RayTreeNode* raytree, RayQueue* gr
             RayTreeNode* transmitted_ptr = tree_ptr;
             assert((1-ABS(vecMagnitude(current_bud->transmitted_shoot)))<1e-3);
             Ray transmitted_ray = {.origin = current_bud->position, .direction = current_bud->transmitted_shoot};
-            float transmitted_intersect_dist = findIntersect(transmitted_ray, &scene, &closest_obj_ind);
+            float transmitted_intersect_dist = findIntersect(transmitted_ray, scene, &closest_obj_ind);
             if (transmitted_intersect_dist > 1e8){ 
                 tree_ptr--;
                 // stunted growth
@@ -929,27 +921,28 @@ int fresnelForwardTracing(frLightRay rootray, RayTreeNode* raytree, RayQueue* gr
             else {
                 transmitted_ptr->scene_obj_ind = closest_obj_ind;
                 transmitted_ptr->position = vecAdd(current_bud->position, vecScalarMult(transmitted_ray.direction, transmitted_intersect_dist));
-                printf("transmitted - x: %f, y: %f, z: %f\n", transmitted_ptr->position.x, transmitted_ptr->position.y, transmitted_ptr->position.z);
+                // printf("transmitted - x: %f, y: %f, z: %f\n", transmitted_ptr->position.x, transmitted_ptr->position.y, transmitted_ptr->position.z);
             
-                transmitted_ptr->normal = findNormal(transmitted_ptr->parent, transmitted_ptr, &scene);
+                transmitted_ptr->normal = findNormal(transmitted_ptr->parent, transmitted_ptr, scene);
                 // get reflected growth
                 transmitted_ptr->reflected_shoot = findReflection(transmitted_ptr->parent, transmitted_ptr);
                 transmitted_ptr->stunted_reflection = 0;
                 // get transmitted growth
-                transmitted_ptr->transmitted_shoot = findTransmission(transmitted_ptr->parent, transmitted_ptr, &scene, rootray.wavelength);
-                transmitted_ptr->stunted_transmission = 0;
+                transmitted_ptr->transmitted_shoot = findTransmission(transmitted_ptr->parent, transmitted_ptr, scene, rootray.wavelength);
+                if (vecEqual(transmitted_ptr->transmitted_shoot, (Vec3) {0,0,0})) transmitted_ptr->stunted_transmission = 1;
+                else transmitted_ptr->stunted_transmission = 0;
                 // add to queue
-                if (joinQueue(&growth_queue, transmitted_ptr)<0) printf("FULL QUEUE\n");
+                if (joinQueue(growth_queue, transmitted_ptr)<0) printf("FULL QUEUE\n");
             }
-        } else stunted_transmission = 1;
-        if (current_bud->stunted_reflection & current_bud->stunted_transmission){
-            if (joinQueue(&stunted_queue, current_bud)<0) printf("FULL QUEUE\n");
         };
-        if (current_bud->depth > 4){
-            printf("!");
+        if (current_bud->stunted_reflection & current_bud->stunted_transmission){
+            if (joinQueue(stunted_queue, current_bud)<0) printf("FULL QUEUE\n");
         };
     };
-    free(raytree);
+    if (measureQueue(stunted_queue) > 4){
+        printf("!");
+    };
+
     return 1;
 };
 
@@ -965,17 +958,17 @@ float fresnelBackwardColoring(frLightRay rootray, RayTreeNode* raytree, RayQueue
     // Repeat until root
 
     // Starting from last, color
-    
+
     // I can just do the coloring while checking the sources
     while (measureQueue(tips_queue)>0){
         RayTreeNode* current_tip = leaveQueue(tips_queue);
         // coloring function
-        if (RED_WAVELENGTH == rootray.wavelength){
-        current_tip->color.x = shadowTrace(current_tip, scene, rootray.wavelength);
-        } else if (GREEN_WAVELENGTH == rootray.wavelength){
-        current_tip->color.y = shadowTrace(current_tip, scene, rootray.wavelength);
-        } else if (BLUE_WAVELENGTH == rootray.wavelength){
-        current_tip->color.z = shadowTrace(current_tip, scene, rootray.wavelength);
+        if (isApprox(rootray.wavelength, RED_WAVELENGTH, 1e-6)){
+            current_tip->color.x = shadowTrace(current_tip, scene, rootray.wavelength);
+        } else if (isApprox(rootray.wavelength, GREEN_WAVELENGTH, 1e-6)){
+            current_tip->color.y = shadowTrace(current_tip, scene, rootray.wavelength);
+        } else if (isApprox(rootray.wavelength, BLUE_WAVELENGTH, 1e-6)){
+            current_tip->color.z = shadowTrace(current_tip, scene, rootray.wavelength);
         }
         if (isReflection(current_tip, NULL)){
             (current_tip->parent)->stunted_reflection = 1;
@@ -987,11 +980,11 @@ float fresnelBackwardColoring(frLightRay rootray, RayTreeNode* raytree, RayQueue
         }
     }
     float root_color;
-    if (RED_WAVELENGTH == rootray.wavelength){
+    if (isApprox(rootray.wavelength, RED_WAVELENGTH, 1e-6)){
         root_color = raytree->color.x;
-    } else if (GREEN_WAVELENGTH == rootray.wavelength){
+    } else if (isApprox(rootray.wavelength, GREEN_WAVELENGTH, 1e-6)){
         root_color = raytree->color.y;
-    } else if (BLUE_WAVELENGTH == rootray.wavelength){
+    } else if (isApprox(rootray.wavelength, BLUE_WAVELENGTH, 1e-6)){
         root_color = raytree->color.z;
     }
     return root_color;
@@ -1084,8 +1077,6 @@ void tracingManagerV0(Camera camera, int pixel_height, int pixel_width, Scene sc
                 printf("%d\n", curr_obj_type);
             };
 
-            
-
             *current_pixel_channel = reflected_ray.color.x; current_pixel_channel++;
             *current_pixel_channel = reflected_ray.color.y; current_pixel_channel++;
             *current_pixel_channel = reflected_ray.color.z; current_pixel_channel++;
@@ -1094,26 +1085,33 @@ void tracingManagerV0(Camera camera, int pixel_height, int pixel_width, Scene sc
 };
 
 
-int fresnelTracing(frLightRay rootray, Scene* scene, int x_pixel, int y_pixel){
+float fresnelTracing(frLightRay rootray, Scene* scene, int x_pixel, int y_pixel){
     RayTreeNode* raytree = (RayTreeNode *) malloc(MAX_TREE_SIZE * sizeof(RayTreeNode));
     // initialize queue
     RayQueue growth_queue = {.back = 0, .front = 0};
     RayQueue stunt_queue = {.back = 0, .front = 0};
 
     // Forward Tracing
-    int forwardtrace = fresnelForwardTracing(rootray, raytree, &growth_queue, &stunt_queue, scene, x_pixel, y_pixel);
-    // Merge growth and stunt queues to get the tips queue
-    RayQueue* tips_queue;
-    if (measureQueue(&growth_queue)>measureQueue(&stunt_queue)){
-        mergeQueue(&growth_queue, &stunt_queue);
-        tips_queue = &growth_queue;
-    } else{
-        mergeQueue(&stunt_queue, &growth_queue);
-        tips_queue = &stunt_queue;
+    if (fresnelForwardTracing(rootray, raytree, &growth_queue, &stunt_queue, scene, x_pixel, y_pixel))
+    {
+        // Merge growth and stunt queues to get the tips queue
+        RayQueue* tips_queue;
+        if (measureQueue(&growth_queue)>measureQueue(&stunt_queue)){
+            mergeQueue(&growth_queue, &stunt_queue);
+            tips_queue = &growth_queue;
+        } else{
+            mergeQueue(&stunt_queue, &growth_queue);
+            tips_queue = &stunt_queue;
+        }
+        // Backward Coloring
+        float pixel_channel_color = fresnelBackwardColoring(rootray, raytree, tips_queue, scene, x_pixel, y_pixel);
+        free(raytree);
+        return pixel_channel_color;
     }
-    // Backward Coloring
-    fresnelBackwardColoring(rootray, raytree, tips_queue, scene, x_pixel, y_pixel);
-    return 0;
+    else {
+        free(raytree);
+        return 0;
+    }
 };
 /////////////////////////////////////////////////////////////////////////////
 /* OUTPUT FUNCTIONS */

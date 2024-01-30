@@ -148,6 +148,11 @@ Matrix3 mat3Inverse(Matrix3* A)
 
 /////////////////////////////////////////////////////////////////////////////
 /* OTHER FUNCTIONS */
+int isApprox(float x, float y, float tolerance){
+    if(ABS(x - y)<tolerance) return 1;
+    else return 0;
+}
+
 
 Vec3 grahamSchmidt(Vec3 norm_vec, Vec3 unnormed_vec, int norm_res)
 {
@@ -157,5 +162,6 @@ Vec3 grahamSchmidt(Vec3 norm_vec, Vec3 unnormed_vec, int norm_res)
     if (!norm_res) return perp_vec;
     return vecNormalize(perp_vec);   
 }
+
 
 #endif
