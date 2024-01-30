@@ -1,2 +1,2 @@
 # Graphics Engine Using C Language
-![Spheres Render](image/spheres.png)
+![Spheres Render](image/spheres.PNG)
